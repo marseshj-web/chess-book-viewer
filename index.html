@@ -1,0 +1,1946 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>체스 기보 뷰어</title>
+<meta name="theme-color" content="#4A3B29">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="기보 뷰어">
+<style>
+  :root {
+    --bg: #F2EFE6;
+    --surface: #FFFFFF;
+    --surface-2: #EAE4D4;
+    --text: #211E19;
+    --text-muted: #6E6656;
+    --border: #DAD1BB;
+    --accent: #3B6E58;
+    --accent-contrast: #FFFFFF;
+    --accent-soft: #DCEAE3;
+    --danger: #A8452F;
+    --warn: #8A6A1E;
+    --board-light: #EFE7D2;
+    --board-dark: #8B6F4E;
+    --board-frame: #4A3B29;
+    --sel: #E4C55E;
+    --legal: #3B6E58;
+    --lastmove: #E4C55E;
+    --checksq: #A8452F;
+    --piece-white-fill: #FBF8EF;
+    --piece-white-stroke: #2B2A27;
+    --piece-black-fill: #18140F;
+    --piece-black-stroke: #F4EFE0;
+    --radius: 10px;
+    --font-display: Georgia, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
+    --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", system-ui, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #17150F;
+      --surface: #211E17;
+      --surface-2: #2A261C;
+      --text: #ECE6D6;
+      --text-muted: #A79C82;
+      --border: #3A3527;
+      --accent: #6FB894;
+      --accent-contrast: #0E1712;
+      --accent-soft: #20352C;
+      --danger: #E08A66;
+      --warn: #D8B45C;
+      --board-light: #C9B896;
+      --board-dark: #4A3B29;
+      --board-frame: #241C13;
+      --sel: #E4C55E;
+      --legal: #6FB894;
+      --lastmove: #E4C55E;
+      --checksq: #D97757;
+      --piece-white-fill: #F5F1E4;
+      --piece-white-stroke: #0E0C09;
+      --piece-black-fill: #0B0A08;
+      --piece-black-stroke: #E7DFCB;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #17150F;
+    --surface: #211E17;
+    --surface-2: #2A261C;
+    --text: #ECE6D6;
+    --text-muted: #A79C82;
+    --border: #3A3527;
+    --accent: #6FB894;
+    --accent-contrast: #0E1712;
+    --accent-soft: #20352C;
+    --danger: #E08A66;
+    --warn: #D8B45C;
+    --board-light: #C9B896;
+    --board-dark: #4A3B29;
+    --board-frame: #241C13;
+    --sel: #E4C55E;
+    --legal: #6FB894;
+    --lastmove: #E4C55E;
+    --checksq: #D97757;
+    --piece-white-fill: #F5F1E4;
+    --piece-white-stroke: #0E0C09;
+    --piece-black-fill: #0B0A08;
+    --piece-black-stroke: #E7DFCB;
+  }
+  :root[data-theme="light"] {
+    --bg: #F2EFE6;
+    --surface: #FFFFFF;
+    --surface-2: #EAE4D4;
+    --text: #211E19;
+    --text-muted: #6E6656;
+    --border: #DAD1BB;
+    --accent: #3B6E58;
+    --accent-contrast: #FFFFFF;
+    --accent-soft: #DCEAE3;
+    --danger: #A8452F;
+    --warn: #8A6A1E;
+    --board-light: #EFE7D2;
+    --board-dark: #8B6F4E;
+    --board-frame: #4A3B29;
+    --piece-white-fill: #FBF8EF;
+    --piece-white-stroke: #2B2A27;
+    --piece-black-fill: #18140F;
+    --piece-black-stroke: #F4EFE0;
+  }
+
+  * , *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-ui);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .app { max-width: 1180px; margin: 0 auto; padding: 24px 20px 56px; }
+  .app-header { margin-bottom: 20px; }
+  .app-header h1 {
+    font-family: var(--font-display);
+    font-size: clamp(1.4rem, 1.05rem + 1.3vw, 2rem);
+    margin: 0 0 4px;
+    text-wrap: balance;
+  }
+  .app-header p { margin: 0; color: var(--text-muted); font-size: 0.95rem; max-width: 60ch; }
+
+  .layout { display: grid; grid-template-columns: minmax(300px, 560px) 1fr; gap: 24px; align-items: start; }
+  @media (max-width: 860px) {
+    .layout { grid-template-columns: 1fr; }
+  }
+
+  .board-pane { display: flex; flex-direction: column; gap: 12px; }
+  .board-frame {
+    background: var(--board-frame);
+    padding: clamp(8px, 2vw, 14px);
+    border-radius: var(--radius);
+    box-shadow: 0 1px 3px rgba(0,0,0,.2), 0 10px 26px -14px rgba(0,0,0,.5);
+  }
+  .board-wrap { position: relative; width: 100%; aspect-ratio: 1 / 1; }
+  #board {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    grid-template-rows: repeat(8, 1fr);
+    width: 100%;
+    height: 100%;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .sq { position: relative; display: flex; align-items: center; justify-content: center; user-select: none; touch-action: none; }
+  .sq.light { background: var(--board-light); }
+  .sq.dark { background: var(--board-dark); }
+  .sq.selected::before { content: ""; position: absolute; inset: 0; background: var(--sel); opacity: .55; }
+  .sq.last-move::before { content: ""; position: absolute; inset: 0; background: var(--lastmove); opacity: .35; }
+  .sq.check::before { content: ""; position: absolute; inset: 0; background: var(--checksq); opacity: .55; }
+  .sq.drag-source .piece { opacity: .18; }
+  .sq .dot { position: absolute; width: 30%; height: 30%; border-radius: 50%; background: var(--legal); opacity: .55; }
+  .sq.legal-capture::after { content: ""; position: absolute; inset: 6%; border-radius: 50%; border: calc(var(--sq-size, 44px) * 0.07) solid var(--legal); opacity: .6; box-sizing: border-box; }
+  .sq .coord { position: absolute; font-family: var(--font-mono); font-size: calc(var(--sq-size, 44px) * 0.19); opacity: .5; pointer-events: none; line-height: 1; }
+  .sq.light .coord { color: var(--board-dark); }
+  .sq.dark .coord { color: var(--board-light); }
+  .sq .coord.file { right: 3px; bottom: 2px; }
+  .sq .coord.rank { left: 3px; top: 2px; }
+  .piece {
+    width: calc(var(--sq-size, 44px) * 0.82);
+    height: calc(var(--sq-size, 44px) * 0.82);
+    cursor: grab;
+    position: relative;
+    z-index: 2;
+    user-select: none;
+    -webkit-user-drag: none;
+    pointer-events: none;
+    display: block;
+  }
+
+  .promo-overlay {
+    position: absolute; inset: 0;
+    display: none;
+    grid-template-columns: repeat(8, 1fr);
+    grid-template-rows: repeat(8, 1fr);
+    z-index: 20;
+  }
+  .promo-choice {
+    pointer-events: auto;
+    background: var(--surface);
+    border: 2px solid var(--accent);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 3px 10px rgba(0,0,0,.35);
+  }
+  .promo-choice .piece { cursor: pointer; pointer-events: none; width: calc(var(--sq-size, 44px) * 0.7); height: calc(var(--sq-size, 44px) * 0.7); }
+
+  .drag-ghost { position: fixed; left: 0; top: 0; pointer-events: none; z-index: 1000; }
+
+  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .nav-group { display: flex; gap: 4px; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  .btn {
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    padding: 6px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .btn { transition: border-color .15s ease, background-color .15s ease; }
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .btn.primary { background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); }
+  .btn.small { padding: 4px 9px; font-size: .82rem; }
+
+  .ply-indicator { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--text-muted); margin-left: 4px; }
+
+  .status-banner { font-size: .88rem; padding: 6px 11px; border-radius: 8px; background: var(--surface-2); color: var(--text-muted); width: fit-content; }
+  .status-banner.warn { background: color-mix(in srgb, var(--warn) 18%, var(--surface-2)); color: var(--warn); }
+  .status-banner.danger { background: color-mix(in srgb, var(--danger) 20%, var(--surface-2)); color: var(--danger); }
+
+  .fen-row { display: flex; gap: 6px; align-items: center; font-family: var(--font-mono); font-size: .78rem; }
+  .fen-row input {
+    flex: 1; min-width: 0; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px 8px; color: var(--text); font-family: inherit;
+  }
+
+  .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+  .tab-btn {
+    background: none; border: none; padding: 8px 14px; cursor: pointer;
+    color: var(--text-muted); border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .tab-btn.active { color: var(--text); border-color: var(--accent); font-weight: 600; }
+
+  .panel-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px; display: flex; flex-direction: column; gap: 14px;
+  }
+  .field-group { display: flex; flex-direction: column; gap: 6px; }
+  .field-label { font-size: .82rem; color: var(--text-muted); }
+  textarea#movetextInput {
+    width: 100%; min-height: 92px; resize: vertical; font-family: var(--font-mono);
+    font-size: .85rem; padding: 8px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--surface-2); color: var(--text);
+  }
+  .hint { font-size: .78rem; color: var(--text-muted); }
+  .hint code { font-family: var(--font-mono); font-size: .95em; background: var(--surface-2); padding: 0 3px; border-radius: 3px; }
+  .error-banner {
+    color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, var(--surface-2));
+    padding: 8px 10px; border-radius: 8px; font-size: .83rem; display: none;
+  }
+
+  .move-list {
+    display: flex; flex-wrap: wrap; align-content: flex-start; gap: 3px 2px; max-height: 240px;
+    overflow-y: auto; font-family: var(--font-mono); font-size: .87rem; padding: 8px;
+    background: var(--surface-2); border-radius: 8px;
+  }
+  .move-pair { display: inline-flex; align-items: center; gap: 2px; margin-right: 4px; }
+  .move-num { color: var(--text-muted); margin-right: 1px; font-variant-numeric: tabular-nums; }
+  .move-chip { border: none; background: none; color: var(--text); cursor: pointer; padding: 2px 5px; border-radius: 4px; }
+  .move-chip:hover { background: var(--accent-soft); }
+  .move-chip.current { background: var(--accent); color: var(--accent-contrast); }
+  .move-chip.diverged { font-style: italic; color: var(--danger); }
+  .muted { color: var(--text-muted); font-size: .85rem; }
+
+  .diverge-note { font-size: .8rem; color: var(--danger); display: none; align-items: center; gap: 8px; }
+
+  .palette { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+  .palette-btn {
+    aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--surface-2); cursor: pointer; padding: 4px;
+  }
+  .palette-btn.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft) inset; }
+  .palette-btn img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+  .palette-btn.erase { font-size: 1.1rem; color: var(--text-muted); }
+
+  .setup-row { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+  .radio-group { display: flex; gap: 12px; font-size: .88rem; }
+  .radio-group label { display: flex; align-items: center; gap: 4px; }
+  .checkbox-group { display: flex; flex-wrap: wrap; gap: 10px; font-size: .85rem; }
+  .checkbox-group label { display: flex; align-items: center; gap: 4px; }
+  .ep-field { display: flex; align-items: center; gap: 6px; font-size: .85rem; }
+  .ep-field input { width: 4.5em; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; color: var(--text); }
+  .inline-error { color: var(--danger); font-size: .78rem; }
+
+  .photo-pick { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .photo-pick input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+  .photo-preview { display: none; max-width: 100%; max-height: 260px; object-fit: contain; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); align-self: flex-start; }
+  .photo-status { font-size: .85rem; color: var(--text-muted); }
+  .photo-status.error { color: var(--danger); }
+  .photo-unavailable { font-size: .85rem; color: var(--text-muted); background: var(--surface-2); padding: 10px 12px; border-radius: 8px; }
+  .tier-toggle { display: flex; align-items: center; gap: 5px; font-size: .82rem; color: var(--text-muted); }
+  .result-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 10px; background: var(--surface-2); }
+  .result-card h3 { margin: 0; font-size: .92rem; }
+  .diagram-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
+  .mini-board { width: 168px; flex: none; display: grid; grid-template-columns: repeat(8, 1fr); border: 3px solid var(--board-frame); border-radius: 3px; }
+  .mini-board span { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; }
+  .mini-board span.l { background: var(--board-light); }
+  .mini-board span.d { background: var(--board-dark); }
+  .mini-board img { width: 90%; height: 90%; }
+  .diagram-meta { flex: 1; min-width: 160px; display: flex; flex-direction: column; gap: 6px; font-size: .83rem; }
+  .diagram-meta .fen { font-family: var(--font-mono); font-size: .72rem; word-break: break-all; color: var(--text-muted); }
+  .warn-text { color: var(--warn); font-size: .8rem; }
+  textarea.recog-movetext { width: 100%; min-height: 72px; resize: vertical; font-family: var(--font-mono); font-size: .83rem; padding: 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+  .start-select { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; font-size: .83rem; max-width: 100%; }
+
+  a { color: var(--accent); }
+</style>
+
+<div class="app">
+  <header class="app-header">
+    <h1>체스 기보 뷰어</h1>
+    <p>책에 나온 기보를 붙여넣고 한 수씩 재생하며 기물의 위치를 눈으로 확인하세요. 임의의 국면을 세팅해서 시작할 수도 있습니다.</p>
+  </header>
+
+  <div class="layout">
+    <section class="board-pane">
+      <div class="board-frame">
+        <div class="board-wrap" id="boardWrap">
+          <div id="board"></div>
+          <div class="promo-overlay" id="promoOverlay"></div>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <div class="nav-group">
+          <button class="btn" id="firstBtn" title="처음으로 (Home)">|◀</button>
+          <button class="btn" id="prevBtn" title="이전 수 (←)">◀</button>
+          <button class="btn" id="nextBtn" title="다음 수 (→)">▶</button>
+          <button class="btn" id="lastBtn" title="마지막으로 (End)">▶|</button>
+        </div>
+        <span class="ply-indicator" id="plyIndicator">0 / 0</span>
+        <button class="btn small" id="flipBtn" title="보드 뒤집기">보드 뒤집기</button>
+      </div>
+
+      <div id="statusBanner" class="status-banner">백 차례</div>
+
+      <div class="fen-row">
+        <input id="fenDisplay" type="text" readonly aria-label="현재 국면 FEN">
+        <button class="btn small" id="copyFenBtn">FEN 복사</button>
+      </div>
+    </section>
+
+    <section class="panel-pane">
+      <div class="tabs" role="tablist">
+        <button class="tab-btn active" id="tabReplayBtn" role="tab">재생</button>
+        <button class="tab-btn" id="tabSetupBtn" role="tab">세팅</button>
+        <button class="tab-btn" id="tabPhotoBtn" role="tab">사진 인식</button>
+      </div>
+
+      <div id="panelReplay" class="panel-card">
+        <div class="field-group">
+          <label class="field-label" for="movetextInput">기보 입력 / 붙여넣기 (메인 라인만, 괄호 속 변화수는 무시)</label>
+          <textarea id="movetextInput" placeholder="1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 ..."></textarea>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <button class="btn primary" id="playBtn">기보 재생</button>
+            <span class="hint">붙여넣으면 바로 재생 · Ctrl+Enter</span>
+          </div>
+          <div class="hint">대충 쳐도 됩니다: <code>e4 e5 nf3 nc6</code>, <code>1.e4e5 2.Nf3</code>, <code>0-0</code>, <code>e2-e4</code>, <code>♘f3</code>, <code>나이트f3</code>, 한글 자판 상태로 친 <code>ㄷ4</code>도 읽습니다. 책 사진은 휴대폰 기본 기능(아이폰 '텍스트 인식', 갤럭시 '텍스트 추출'·구글 렌즈)으로 글자를 복사해 붙여넣어도 됩니다.</div>
+          <div id="parseError" class="error-banner"></div>
+          <div id="parseSkipped" class="hint" style="display:none;"></div>
+        </div>
+
+        <div class="field-group">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+            <label class="field-label">수순</label>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <span class="diverge-note" id="divergeNote">책 수순에서 벗어남 <button class="btn small" id="backToBookBtn">책 수순으로 복귀</button></span>
+              <button class="btn small" id="copyPgnBtn">기보 복사</button>
+            </div>
+          </div>
+          <div id="moveList" class="move-list"><span class="muted">기보를 입력하고 재생 버튼을 누르세요.</span></div>
+        </div>
+      </div>
+
+      <div id="panelSetup" class="panel-card" style="display:none;">
+        <div class="field-group">
+          <label class="field-label">기물 팔레트 (선택 후 판을 클릭해 배치, 드래그로 이동)</label>
+          <div class="palette" id="palette">
+            <button class="palette-btn" data-piece="K"></button>
+            <button class="palette-btn" data-piece="Q"></button>
+            <button class="palette-btn" data-piece="R"></button>
+            <button class="palette-btn" data-piece="B"></button>
+            <button class="palette-btn" data-piece="N"></button>
+            <button class="palette-btn" data-piece="P"></button>
+            <button class="palette-btn erase" data-piece="erase">✕</button>
+            <button class="palette-btn" data-piece="k"></button>
+            <button class="palette-btn" data-piece="q"></button>
+            <button class="palette-btn" data-piece="r"></button>
+            <button class="palette-btn" data-piece="b"></button>
+            <button class="palette-btn" data-piece="n"></button>
+            <button class="palette-btn" data-piece="p"></button>
+          </div>
+        </div>
+
+        <div class="setup-row">
+          <button class="btn small" id="stdStartBtn">표준 시작 위치</button>
+          <button class="btn small" id="emptyBoardBtn">빈 판</button>
+        </div>
+
+        <div class="setup-row">
+          <div class="field-group">
+            <span class="field-label">차례</span>
+            <div class="radio-group">
+              <label><input type="radio" name="turnRadio" id="turnWhite" value="w"> 백</label>
+              <label><input type="radio" name="turnRadio" id="turnBlack" value="b"> 흑</label>
+            </div>
+          </div>
+          <div class="field-group">
+            <span class="field-label">캐슬링 권리</span>
+            <div class="checkbox-group">
+              <label><input type="checkbox" id="castleWK"> 백 킹사이드</label>
+              <label><input type="checkbox" id="castleWQ"> 백 퀸사이드</label>
+              <label><input type="checkbox" id="castleBK"> 흑 킹사이드</label>
+              <label><input type="checkbox" id="castleBQ"> 흑 퀸사이드</label>
+            </div>
+          </div>
+          <div class="field-group">
+            <span class="field-label">앙파상 대상 칸</span>
+            <div class="ep-field">
+              <input type="text" id="epInput" placeholder="예: e3, 없으면 비움" maxlength="2">
+            </div>
+          </div>
+        </div>
+        <div class="hint">시작 위치를 바꾸면 재생 중이던 기보/수순은 초기화됩니다.</div>
+
+        <div class="field-group">
+          <label class="field-label" for="fenInput">FEN으로 국면 불러오기</label>
+          <div class="fen-row">
+            <input id="fenInput" type="text" placeholder="FEN 문자열 붙여넣기">
+            <button class="btn small" id="loadFenBtn">불러오기</button>
+          </div>
+          <div id="fenLoadError" class="inline-error"></div>
+        </div>
+      </div>
+
+      <div id="panelPhoto" class="panel-card" style="display:none;">
+        <div class="field-group">
+          <span class="field-label">책 페이지 사진 (다이어그램과 기보를 함께 읽습니다)</span>
+          <div id="photoUnavailable" class="photo-unavailable" style="display:none;">
+            다이어그램 사진 인식은 Claude 앱이나 claude.ai에서 이 페이지를 열었을 때만 사용할 수 있습니다.<br>
+            기보 글자는 휴대폰 기본 기능(아이폰 '텍스트 인식', 갤럭시 '텍스트 추출'·구글 렌즈)으로 복사해 재생 탭에 붙여넣으면 됩니다.
+          </div>
+          <div id="photoControls" class="field-group">
+            <div class="photo-pick">
+              <label class="btn" for="photoInput">사진 찍기 / 선택</label>
+              <input type="file" id="photoInput" accept="image/*">
+              <label class="tier-toggle"><input type="checkbox" id="preciseToggle"> 정밀 모드 (더 느림)</label>
+            </div>
+            <img id="photoPreview" class="photo-preview" alt="선택한 사진">
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+              <button class="btn primary" id="recognizeBtn" disabled>인식하기</button>
+              <button class="btn small" id="stopRecogBtn" style="display:none;">중지</button>
+              <span id="photoStatus" class="photo-status"></span>
+            </div>
+            <div class="hint">다이어그램 하나나 기보 부분이 화면에 꽉 차도록 가깝게 찍을수록 정확합니다. 인식 결과는 틀릴 수 있으니 미리보기를 확인하고, 필요하면 세팅 탭에서 고치세요.</div>
+          </div>
+        </div>
+        <div id="photoResults" class="field-group"></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------- constants ----------
+  var MOVETEXT_KEY = "chess-book-viewer:movetext";
+  var STANDARD_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+  var KNIGHT_DELTAS = [[1,2],[2,1],[2,-1],[1,-2],[-1,-2],[-2,-1],[-2,1],[-1,2]];
+  var KING_DELTAS = [[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]];
+  var BISHOP_DIRS = [[1,1],[1,-1],[-1,1],[-1,-1]];
+  var ROOK_DIRS = [[1,0],[-1,0],[0,1],[0,-1]];
+  var QUEEN_DIRS = BISHOP_DIRS.concat(ROOK_DIRS);
+
+  // ---------- coordinate helpers ----------
+  function fileOf(sq) { return sq % 8; }
+  function rankOf(sq) { return Math.floor(sq / 8); }
+  function sqOf(file, rank) { if (file < 0 || file > 7 || rank < 0 || rank > 7) return -1; return rank * 8 + file; }
+  function algebraic(sq) { return "abcdefgh"[fileOf(sq)] + (rankOf(sq) + 1); }
+  function squareFromAlgebraic(a) { var file = a.charCodeAt(0) - 97; var rank = Number(a[1]) - 1; return sqOf(file, rank); }
+  function colorOf(piece) { if (!piece) return null; return piece === piece.toUpperCase() ? "w" : "b"; }
+  function pieceTypeOf(piece) { return piece ? piece.toUpperCase() : null; }
+
+  // ---------- piece sprites (drawn on canvas so rendering never depends on a font having chess glyphs) ----------
+  var SPRITE = {};
+  function rectPath(ctx, x, y, w, h) { ctx.beginPath(); ctx.rect(x, y, w, h); ctx.fill(); ctx.stroke(); }
+  function circlePath(ctx, cx, cy, r) { ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+  function ellipsePath(ctx, cx, cy, rx, ry) { ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+  function polyPath(ctx, pts) {
+    ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+    for (var i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+  }
+
+  function drawBase(ctx) {
+    ellipsePath(ctx, 50, 87, 20, 6);
+    polyPath(ctx, [[34, 82], [66, 82], [61, 66], [39, 66]]);
+  }
+  function drawPawn(ctx) {
+    ellipsePath(ctx, 50, 86, 19, 7);
+    polyPath(ctx, [[41, 80], [59, 80], [55, 56], [45, 56]]);
+    ellipsePath(ctx, 50, 54, 10, 4);
+    circlePath(ctx, 50, 36, 13);
+  }
+  function drawRook(ctx) {
+    drawBase(ctx);
+    rectPath(ctx, 36, 34, 28, 32);
+    rectPath(ctx, 36, 22, 8, 12);
+    rectPath(ctx, 46, 22, 8, 12);
+    rectPath(ctx, 56, 22, 8, 12);
+  }
+  function drawBishop(ctx) {
+    drawBase(ctx);
+    ctx.beginPath();
+    ctx.moveTo(50, 20);
+    ctx.quadraticCurveTo(68, 36, 60, 66);
+    ctx.lineTo(40, 66);
+    ctx.quadraticCurveTo(32, 36, 50, 20);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(43, 31); ctx.lineTo(57, 22); ctx.stroke();
+    circlePath(ctx, 50, 12, 6);
+  }
+  function drawKnight(ctx) {
+    drawBase(ctx);
+    ctx.beginPath();
+    ctx.moveTo(31, 66);
+    ctx.lineTo(31, 52);
+    ctx.bezierCurveTo(31, 38, 40, 27, 54, 21);
+    ctx.lineTo(49, 17);
+    ctx.lineTo(45, 25);
+    ctx.bezierCurveTo(56, 25, 68, 33, 70, 46);
+    ctx.bezierCurveTo(71, 51, 67, 53, 63, 50);
+    ctx.lineTo(59, 55);
+    ctx.bezierCurveTo(57, 59, 53, 60, 51, 56);
+    ctx.lineTo(44, 66);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    var savedFill = ctx.fillStyle;
+    ctx.fillStyle = ctx.strokeStyle;
+    circlePath(ctx, 53, 37, 2.4);
+    ctx.fillStyle = savedFill;
+  }
+  function drawQueen(ctx) {
+    drawBase(ctx);
+    rectPath(ctx, 37, 56, 26, 10);
+    polyPath(ctx, [[33, 58], [39, 28], [45, 46], [50, 22], [55, 46], [61, 28], [67, 58]]);
+    [[39, 26], [50, 20], [61, 26]].forEach(function (p) { circlePath(ctx, p[0], p[1], 4.2); });
+  }
+  function drawKing(ctx) {
+    drawBase(ctx);
+    rectPath(ctx, 37, 48, 26, 18);
+    rectPath(ctx, 47, 18, 6, 20);
+    rectPath(ctx, 41, 24, 18, 6);
+  }
+  var PIECE_DRAWERS = { P: drawPawn, N: drawKnight, B: drawBishop, R: drawRook, Q: drawQueen, K: drawKing };
+
+  function makeSprite(type, style) {
+    var c = document.createElement("canvas");
+    c.width = 100; c.height = 100;
+    var ctx = c.getContext("2d");
+    ctx.fillStyle = style.fill;
+    ctx.strokeStyle = style.stroke;
+    ctx.lineWidth = style.lw;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    PIECE_DRAWERS[type](ctx);
+    return c.toDataURL("image/png");
+  }
+  function buildSprites() {
+    var whiteStyle = { fill: "#F5F0E4", stroke: "#2A2721", lw: 3.4 };
+    var blackStyle = { fill: "#201C15", stroke: "#EFE8D6", lw: 3.4 };
+    Object.keys(PIECE_DRAWERS).forEach(function (t) {
+      SPRITE[t] = makeSprite(t, whiteStyle);
+      SPRITE[t.toLowerCase()] = makeSprite(t, blackStyle);
+    });
+  }
+  function pieceImgHtml(piece, extraClass) {
+    return '<img class="piece' + (extraClass ? " " + extraClass : "") + '" src="' + SPRITE[piece] + '" alt="" draggable="false">';
+  }
+
+  // ---------- FEN ----------
+  function parseFEN(fen) {
+    var parts = fen.trim().split(/\s+/);
+    var placement = parts[0];
+    var turn = parts[1] || "w";
+    var castlingStr = parts[2] || "-";
+    var epStr = parts[3] || "-";
+    var halfStr = parts[4] || "0";
+    var fullStr = parts[5] || "1";
+    var ranks = placement.split("/");
+    if (ranks.length !== 8) throw new Error("FEN 형식 오류: 8개의 랭크가 필요합니다.");
+    var board = new Array(64).fill(null);
+    for (var i = 0; i < 8; i++) {
+      var rankIdx = 7 - i;
+      var file = 0;
+      var row = ranks[i];
+      for (var c = 0; c < row.length; c++) {
+        var ch = row[c];
+        if (/\d/.test(ch)) { file += Number(ch); }
+        else { board[sqOf(file, rankIdx)] = ch; file++; }
+      }
+    }
+    var castling = { K: castlingStr.indexOf("K") !== -1, Q: castlingStr.indexOf("Q") !== -1,
+                      k: castlingStr.indexOf("k") !== -1, q: castlingStr.indexOf("q") !== -1 };
+    var ep = epStr === "-" ? null : squareFromAlgebraic(epStr);
+    return { board: board, turn: turn === "b" ? "b" : "w", castling: castling, ep: ep,
+             halfmove: Number(halfStr) || 0, fullmove: Number(fullStr) || 1 };
+  }
+
+  function toFEN(state) {
+    var rows = [];
+    for (var i = 0; i < 8; i++) {
+      var rankIdx = 7 - i;
+      var row = ""; var empty = 0;
+      for (var file = 0; file < 8; file++) {
+        var p = state.board[sqOf(file, rankIdx)];
+        if (!p) { empty++; }
+        else { if (empty) { row += empty; empty = 0; } row += p; }
+      }
+      if (empty) row += empty;
+      rows.push(row);
+    }
+    var placement = rows.join("/");
+    var castling = (state.castling.K ? "K" : "") + (state.castling.Q ? "Q" : "") +
+                    (state.castling.k ? "k" : "") + (state.castling.q ? "q" : "");
+    if (!castling) castling = "-";
+    var ep = state.ep != null ? algebraic(state.ep) : "-";
+    return placement + " " + state.turn + " " + castling + " " + ep + " " + state.halfmove + " " + state.fullmove;
+  }
+
+  function clone(state) {
+    return { board: state.board.slice(), turn: state.turn,
+             castling: { K: state.castling.K, Q: state.castling.Q, k: state.castling.k, q: state.castling.q },
+             ep: state.ep, halfmove: state.halfmove, fullmove: state.fullmove };
+  }
+
+  // ---------- move generation ----------
+  function genMovesForSquare(state, sq) {
+    var piece = state.board[sq];
+    if (!piece) return [];
+    var color = colorOf(piece);
+    if (color !== state.turn) return [];
+    var type = pieceTypeOf(piece);
+    var moves = [];
+    var file = fileOf(sq), rank = rankOf(sq);
+
+    function push(to) {
+      var target = state.board[to];
+      moves.push({ from: sq, to: to, piece: piece, color: color, capture: !!target });
+    }
+
+    if (type === "P") {
+      var dir = color === "w" ? 1 : -1;
+      var startRank = color === "w" ? 1 : 6;
+      var promoRank = color === "w" ? 7 : 0;
+      var oneStep = sqOf(file, rank + dir);
+      if (oneStep !== -1 && !state.board[oneStep]) {
+        if (rank + dir === promoRank) {
+          ["Q","R","B","N"].forEach(function (pr) {
+            moves.push({ from: sq, to: oneStep, piece: piece, color: color, capture: false, promotion: pr });
+          });
+        } else {
+          moves.push({ from: sq, to: oneStep, piece: piece, color: color, capture: false });
+          if (rank === startRank) {
+            var twoStep = sqOf(file, rank + 2 * dir);
+            if (twoStep !== -1 && !state.board[twoStep]) {
+              moves.push({ from: sq, to: twoStep, piece: piece, color: color, capture: false });
+            }
+          }
+        }
+      }
+      [-1, 1].forEach(function (df) {
+        var capSq = sqOf(file + df, rank + dir);
+        if (capSq === -1) return;
+        var target = state.board[capSq];
+        if (target && colorOf(target) !== color) {
+          if (rank + dir === promoRank) {
+            ["Q","R","B","N"].forEach(function (pr) {
+              moves.push({ from: sq, to: capSq, piece: piece, color: color, capture: true, promotion: pr });
+            });
+          } else {
+            moves.push({ from: sq, to: capSq, piece: piece, color: color, capture: true });
+          }
+        } else if (state.ep === capSq) {
+          moves.push({ from: sq, to: capSq, piece: piece, color: color, capture: true, epCapture: true });
+        }
+      });
+    } else if (type === "N") {
+      KNIGHT_DELTAS.forEach(function (d) {
+        var to = sqOf(file + d[0], rank + d[1]);
+        if (to === -1) return;
+        var target = state.board[to];
+        if (!target || colorOf(target) !== color) push(to);
+      });
+    } else if (type === "K") {
+      KING_DELTAS.forEach(function (d) {
+        var to = sqOf(file + d[0], rank + d[1]);
+        if (to === -1) return;
+        var target = state.board[to];
+        if (!target || colorOf(target) !== color) push(to);
+      });
+      var homeRank = color === "w" ? 0 : 7;
+      if (rank === homeRank && file === 4) {
+        var kRight = color === "w" ? state.castling.K : state.castling.k;
+        var qRight = color === "w" ? state.castling.Q : state.castling.q;
+        var opp = color === "w" ? "b" : "w";
+        if (kRight) {
+          var f1 = sqOf(5, homeRank), f2 = sqOf(6, homeRank);
+          if (!state.board[f1] && !state.board[f2] &&
+              !isSquareAttacked(state.board, sq, opp) &&
+              !isSquareAttacked(state.board, f1, opp) &&
+              !isSquareAttacked(state.board, f2, opp)) {
+            moves.push({ from: sq, to: f2, piece: piece, color: color, capture: false, castle: "K" });
+          }
+        }
+        if (qRight) {
+          var d1 = sqOf(3, homeRank), d2 = sqOf(2, homeRank), d3 = sqOf(1, homeRank);
+          if (!state.board[d1] && !state.board[d2] && !state.board[d3] &&
+              !isSquareAttacked(state.board, sq, opp) &&
+              !isSquareAttacked(state.board, d1, opp) &&
+              !isSquareAttacked(state.board, d2, opp)) {
+            moves.push({ from: sq, to: d2, piece: piece, color: color, capture: false, castle: "Q" });
+          }
+        }
+      }
+    } else {
+      var dirs = type === "B" ? BISHOP_DIRS : type === "R" ? ROOK_DIRS : QUEEN_DIRS;
+      dirs.forEach(function (d) {
+        var f = file + d[0], r = rank + d[1];
+        while (true) {
+          var to = sqOf(f, r);
+          if (to === -1) break;
+          var target = state.board[to];
+          if (!target) { push(to); }
+          else { if (colorOf(target) !== color) push(to); break; }
+          f += d[0]; r += d[1];
+        }
+      });
+    }
+    return moves;
+  }
+
+  function generatePseudoMoves(state) {
+    var moves = [];
+    for (var sq = 0; sq < 64; sq++) moves = moves.concat(genMovesForSquare(state, sq));
+    return moves;
+  }
+
+  function isSquareAttacked(board, targetSq, byColor) {
+    var tf = fileOf(targetSq), tr = rankOf(targetSq);
+    var dir = byColor === "w" ? 1 : -1;
+    for (var i = 0; i < 2; i++) {
+      var df = i === 0 ? -1 : 1;
+      var s = sqOf(tf + df, tr - dir);
+      if (s !== -1) {
+        var p = board[s];
+        if (p && colorOf(p) === byColor && pieceTypeOf(p) === "P") return true;
+      }
+    }
+    for (var k = 0; k < KNIGHT_DELTAS.length; k++) {
+      var s2 = sqOf(tf + KNIGHT_DELTAS[k][0], tr + KNIGHT_DELTAS[k][1]);
+      if (s2 !== -1) { var p2 = board[s2]; if (p2 && colorOf(p2) === byColor && pieceTypeOf(p2) === "N") return true; }
+    }
+    for (var m = 0; m < KING_DELTAS.length; m++) {
+      var s3 = sqOf(tf + KING_DELTAS[m][0], tr + KING_DELTAS[m][1]);
+      if (s3 !== -1) { var p3 = board[s3]; if (p3 && colorOf(p3) === byColor && pieceTypeOf(p3) === "K") return true; }
+    }
+    for (var b = 0; b < BISHOP_DIRS.length; b++) {
+      var f = tf + BISHOP_DIRS[b][0], r = tr + BISHOP_DIRS[b][1];
+      while (true) {
+        var s4 = sqOf(f, r);
+        if (s4 === -1) break;
+        var p4 = board[s4];
+        if (p4) { if (colorOf(p4) === byColor && (pieceTypeOf(p4) === "B" || pieceTypeOf(p4) === "Q")) return true; break; }
+        f += BISHOP_DIRS[b][0]; r += BISHOP_DIRS[b][1];
+      }
+    }
+    for (var rr = 0; rr < ROOK_DIRS.length; rr++) {
+      var f2 = tf + ROOK_DIRS[rr][0], r2 = tr + ROOK_DIRS[rr][1];
+      while (true) {
+        var s5 = sqOf(f2, r2);
+        if (s5 === -1) break;
+        var p5 = board[s5];
+        if (p5) { if (colorOf(p5) === byColor && (pieceTypeOf(p5) === "R" || pieceTypeOf(p5) === "Q")) return true; break; }
+        f2 += ROOK_DIRS[rr][0]; r2 += ROOK_DIRS[rr][1];
+      }
+    }
+    return false;
+  }
+
+  function kingSquare(board, color) {
+    for (var sq = 0; sq < 64; sq++) {
+      var p = board[sq];
+      if (p && colorOf(p) === color && pieceTypeOf(p) === "K") return sq;
+    }
+    return -1;
+  }
+
+  function isInCheck(board, color) {
+    var ks = kingSquare(board, color);
+    if (ks === -1) return false;
+    return isSquareAttacked(board, ks, color === "w" ? "b" : "w");
+  }
+
+  function applyMove(state, move) {
+    var board = state.board.slice();
+    var piece = board[move.from];
+    var color = colorOf(piece);
+    var castling = { K: state.castling.K, Q: state.castling.Q, k: state.castling.k, q: state.castling.q };
+    var ep = null;
+    var halfmove = state.halfmove + 1;
+    var fullmove = state.fullmove;
+    var isPawn = pieceTypeOf(piece) === "P";
+    if (isPawn || move.capture) halfmove = 0;
+
+    if (move.epCapture) {
+      var capSq = sqOf(fileOf(move.to), rankOf(move.from));
+      board[capSq] = null;
+    }
+
+    board[move.to] = move.promotion ? (color === "w" ? move.promotion.toUpperCase() : move.promotion.toLowerCase()) : piece;
+    board[move.from] = null;
+
+    if (move.castle === "K") {
+      var rf = color === "w" ? sqOf(7, 0) : sqOf(7, 7);
+      var rt = color === "w" ? sqOf(5, 0) : sqOf(5, 7);
+      board[rt] = board[rf]; board[rf] = null;
+    } else if (move.castle === "Q") {
+      var rf2 = color === "w" ? sqOf(0, 0) : sqOf(0, 7);
+      var rt2 = color === "w" ? sqOf(3, 0) : sqOf(3, 7);
+      board[rt2] = board[rf2]; board[rf2] = null;
+    }
+
+    if (pieceTypeOf(piece) === "K") {
+      if (color === "w") { castling.K = false; castling.Q = false; }
+      else { castling.k = false; castling.q = false; }
+    }
+    function clearRookRight(sq) {
+      if (sq === sqOf(0, 0)) castling.Q = false;
+      if (sq === sqOf(7, 0)) castling.K = false;
+      if (sq === sqOf(0, 7)) castling.q = false;
+      if (sq === sqOf(7, 7)) castling.k = false;
+    }
+    clearRookRight(move.from);
+    clearRookRight(move.to);
+
+    if (isPawn && Math.abs(rankOf(move.to) - rankOf(move.from)) === 2) {
+      ep = sqOf(fileOf(move.from), (rankOf(move.from) + rankOf(move.to)) / 2);
+    }
+
+    if (color === "b") fullmove += 1;
+
+    return { board: board, turn: color === "w" ? "b" : "w", castling: castling, ep: ep, halfmove: halfmove, fullmove: fullmove };
+  }
+
+  function generateLegalMoves(state) {
+    var pseudo = generatePseudoMoves(state);
+    var legal = [];
+    for (var i = 0; i < pseudo.length; i++) {
+      var mv = pseudo[i];
+      var next = applyMove(state, mv);
+      if (!isInCheck(next.board, mv.color)) legal.push(mv);
+    }
+    return legal;
+  }
+
+  function positionStatus(state) {
+    var legal = generateLegalMoves(state);
+    var check = isInCheck(state.board, state.turn);
+    if (legal.length === 0) return check ? "checkmate" : "stalemate";
+    return check ? "check" : "normal";
+  }
+
+  // ---------- SAN ----------
+  function moveToSan(state, move) {
+    if (move.castle === "K") return appendCheckSuffix(state, move, "O-O");
+    if (move.castle === "Q") return appendCheckSuffix(state, move, "O-O-O");
+    var type = pieceTypeOf(move.piece);
+    var dest = algebraic(move.to);
+    var s;
+    if (type === "P") {
+      s = move.capture ? "abcdefgh"[fileOf(move.from)] + "x" + dest : dest;
+      if (move.promotion) s += "=" + move.promotion.toUpperCase();
+    } else {
+      s = type;
+      var legal = generateLegalMoves(state).filter(function (m) {
+        return m.piece === move.piece && m.to === move.to && !m.castle;
+      });
+      var others = legal.filter(function (m) { return m.from !== move.from; });
+      if (others.length) {
+        var sameFile = others.some(function (m) { return fileOf(m.from) === fileOf(move.from); });
+        var sameRank = others.some(function (m) { return rankOf(m.from) === rankOf(move.from); });
+        if (!sameFile) s += "abcdefgh"[fileOf(move.from)];
+        else if (!sameRank) s += String(rankOf(move.from) + 1);
+        else s += "abcdefgh"[fileOf(move.from)] + String(rankOf(move.from) + 1);
+      }
+      if (move.capture) s += "x";
+      s += dest;
+    }
+    return appendCheckSuffix(state, move, s);
+  }
+
+  function appendCheckSuffix(state, move, s) {
+    var next = applyMove(state, move);
+    var status = positionStatus(next);
+    if (status === "checkmate") return s + "#";
+    if (status === "check") return s + "+";
+    return s;
+  }
+
+  // ---------- lenient movetext parsing ----------
+  // Accepts sloppy hand-typed or phone-OCR text: lowercase/uppercase slips, missing spaces ("1.e4e5"),
+  // bare move numbers, long algebraic ("e2-e4", "Ng1f3"), figurines, Korean piece names, foreign
+  // piece letters, and moves typed with the keyboard left in Hangul mode ("ㄷ4" = e4).
+  var FIGURINES = { "♔": "K", "♚": "K", "♕": "Q", "♛": "Q", "♖": "R", "♜": "R", "♗": "B", "♝": "B", "♘": "N", "♞": "N", "♙": "", "♟": "" };
+  var KO_PIECES = [["나이트", "N"], ["비숍", "B"], ["킹", "K"], ["퀸", "Q"], ["룩", "R"], ["폰", ""]];
+  var FOREIGN_PIECES = { D: "Q", T: "R", L: "B", S: "N", C: "N", F: "B" };
+  // 2-beolsik key positions for each jamo
+  var JAMO_KEYS = {
+    "ㅂ": "q", "ㅈ": "w", "ㄷ": "e", "ㄱ": "r", "ㅅ": "t", "ㅛ": "y", "ㅕ": "u", "ㅑ": "i", "ㅐ": "o", "ㅔ": "p",
+    "ㅁ": "a", "ㄴ": "s", "ㅇ": "d", "ㄹ": "f", "ㅎ": "g", "ㅗ": "h", "ㅓ": "j", "ㅏ": "k", "ㅣ": "l",
+    "ㅋ": "z", "ㅌ": "x", "ㅊ": "c", "ㅍ": "v", "ㅠ": "b", "ㅜ": "n", "ㅡ": "m",
+    "ㅃ": "Q", "ㅉ": "W", "ㄸ": "E", "ㄲ": "R", "ㅆ": "T", "ㅒ": "O", "ㅖ": "P",
+    "ㅘ": "hk", "ㅙ": "ho", "ㅚ": "hl", "ㅝ": "nj", "ㅞ": "np", "ㅟ": "nl", "ㅢ": "ml",
+    "ㄳ": "rt", "ㄵ": "sw", "ㄶ": "sg", "ㄺ": "fr", "ㄻ": "fa", "ㄼ": "fq", "ㄽ": "ft", "ㄾ": "fx", "ㄿ": "fv", "ㅀ": "fg", "ㅄ": "qt"
+  };
+  var CHO = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ";
+  var JUNG = "ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ";
+  var JONG = ["", "ㄱ", "ㄲ", "ㄳ", "ㄴ", "ㄵ", "ㄶ", "ㄷ", "ㄹ", "ㄺ", "ㄻ", "ㄼ", "ㄽ", "ㄾ", "ㄿ", "ㅀ", "ㅁ", "ㅂ", "ㅄ", "ㅅ", "ㅆ", "ㅇ", "ㅈ", "ㅊ", "ㅋ", "ㅌ", "ㅍ", "ㅎ"];
+  var HANGUL_RE = /[ㄱ-ㅣ가-힣]/;
+
+  function hangulToKeys(s) {
+    var out = "";
+    for (var i = 0; i < s.length; i++) {
+      var ch = s[i], code = s.charCodeAt(i);
+      var jamo = ch;
+      if (code >= 0xAC00 && code <= 0xD7A3) {
+        var n = code - 0xAC00;
+        jamo = CHO[Math.floor(n / 588)] + JUNG[Math.floor((n % 588) / 28)] + JONG[n % 28];
+      }
+      for (var j = 0; j < jamo.length; j++) out += JAMO_KEYS[jamo[j]] != null ? JAMO_KEYS[jamo[j]] : jamo[j];
+    }
+    return out;
+  }
+
+  function splitMovetext(raw) {
+    var t = raw.replace(/\r/g, "");
+    t = t.replace(/^[ \t]*\[[^\]]*\][ \t]*$/gm, " ");
+    t = t.replace(/\{[^}]*\}/g, " ");
+    var prev;
+    do { prev = t; t = t.replace(/\([^()]*\)|\[[^\[\]]*\]/g, " "); } while (t !== prev);
+    t = t.replace(/\$\d+/g, " ");
+    t = t.replace(/[♔-♟]/g, function (c) { return FIGURINES[c]; });
+    KO_PIECES.forEach(function (p) { t = t.split(p[0]).join(p[1]); });
+    t = t.replace(/[×:]/g, "x").replace(/[‐‑–—−]/g, "-");
+    t = t.replace(/(^|\s)(1-0|0-1|1\/2-1\/2|½-½|\*)(?=\s|$)/g, " ");
+    t = t.replace(/[0Oo]-[0Oo](-[0Oo])?/g, function (m, q) { return q ? " O-O-O " : " O-O "; });
+    t = t.replace(/e\.p\./gi, " ");
+    // Move numbers ("12.", "12...", "12…", "12)"). When glued to the previous move ("e52.Nf3"),
+    // the first digit is that move's rank.
+    t = t.replace(/(\d+)\s*(\.{2,}|…|\.|\))/g, function (m, num, dots, off, s) {
+      return (off > 0 && /[a-hA-Hㄱ-ㅣ가-힣]/.test(s[off - 1]) ? num[0] : "") + " ";
+    });
+    // OCR sometimes splits the rank off: "Nf 3".
+    t = t.replace(/([a-hA-H])[ \t]+([1-8])(?=[\s+#!?,;]|$)/g, "$1$2");
+    t = t.replace(/[!?+#‼⁇⁉⁈±∓⩲⩱∞□⊥→↑⇆○]/g, " ");
+    return t.split(/[\s,;]+/).map(function (c) {
+      return c.replace(/^[.…\-]+|[.…\-]+$/g, "").replace(/^([KQRBN])-(?=[a-h])/, "$1");
+    }).filter(function (c) { return c && !/^\d+$/.test(c); });
+  }
+
+  function looksLikeMove(s) {
+    return /[a-hA-H][1-8]/.test(s) || /^(O-O(-O)?|OOO?)$/i.test(s) || /^[a-h]x?[a-h]$/.test(s);
+  }
+
+  function tokenVariants(tok) {
+    var list = [tok];
+    function add(v) { if (v && list.indexOf(v) === -1) list.push(v); }
+    var f = tok[0], rest = tok.slice(1);
+    add((f === f.toUpperCase() ? f.toLowerCase() : f.toUpperCase()) + rest);
+    add(f + rest.toLowerCase());
+    add(f.toUpperCase() + rest.toLowerCase());
+    add(tok.toLowerCase());
+    if (FOREIGN_PIECES[f]) add(FOREIGN_PIECES[f] + rest);
+    return list;
+  }
+
+  function pickPromotion(cands, promo) {
+    if (promo) return cands.filter(function (mv) { return mv.promotion === promo.toUpperCase(); });
+    var nonPromo = cands.filter(function (mv) { return !mv.promotion; });
+    if (nonPromo.length) return nonPromo;
+    return cands.filter(function (mv) { return mv.promotion === "Q"; }); // unstated promotion → queen
+  }
+
+  // Returns a legal move, "ambiguous", or null (no match) for one token in one spelling.
+  function matchSpelling(legal, v) {
+    function one(c) { return c.length === 1 ? c[0] : c.length > 1 ? "ambiguous" : null; }
+    if (/^(O-O-O|OOO)$/i.test(v)) return one(legal.filter(function (mv) { return mv.castle === "Q"; }));
+    if (/^(O-O|OO)$/i.test(v)) return one(legal.filter(function (mv) { return mv.castle === "K"; }));
+    var PROMO = "(?:=?[(\\/]?([QRBNqrbn])\\)?)?$";
+    var m = new RegExp("^([KQRBNP])?([a-h][1-8])[-x]?([a-h][1-8])" + PROMO).exec(v);
+    if (m) {
+      var from = squareFromAlgebraic(m[2]), to = squareFromAlgebraic(m[3]);
+      var hit = one(pickPromotion(legal.filter(function (mv) {
+        return mv.from === from && mv.to === to && (!m[1] || pieceTypeOf(mv.piece) === m[1]);
+      }), m[4]));
+      if (hit) return hit;
+    }
+    m = new RegExp("^([KQRBNP])?([a-h])?([1-8])?x?([a-h][1-8])" + PROMO).exec(v);
+    if (m) {
+      var type = m[1] || "P", dest = squareFromAlgebraic(m[4]);
+      var toDest = pickPromotion(legal.filter(function (mv) { return pieceTypeOf(mv.piece) === type && mv.to === dest; }), m[5]);
+      var cands = toDest.filter(function (mv) {
+        return (!m[2] || fileOf(mv.from) === m[2].charCodeAt(0) - 97) && (!m[3] || rankOf(mv.from) === Number(m[3]) - 1);
+      });
+      if (cands.length > 1) {
+        var hasX = v.indexOf("x") !== -1;
+        var narrowed = cands.filter(function (mv) { return !!mv.capture === hasX; });
+        if (narrowed.length === 1) return narrowed[0];
+      }
+      // A wrong disambiguation letter is tolerated when only one such piece can go there anyway.
+      if (!cands.length && type !== "P" && toDest.length === 1) return toDest[0];
+      return one(cands);
+    }
+    m = /^([a-h])x?([a-h])$/.exec(v); // old short pawn-capture form: "exd", "ed"
+    if (m) {
+      return one(pickPromotion(legal.filter(function (mv) {
+        return pieceTypeOf(mv.piece) === "P" && mv.capture &&
+               fileOf(mv.from) === m[1].charCodeAt(0) - 97 && fileOf(mv.to) === m[2].charCodeAt(0) - 97;
+      })));
+    }
+    return null;
+  }
+
+  function matchMove(state, tok) {
+    var legal = generateLegalMoves(state);
+    var variants = tokenVariants(tok);
+    for (var i = 0; i < variants.length; i++) {
+      var r = matchSpelling(legal, variants[i]);
+      if (r && r !== "ambiguous") return r;
+    }
+    return null;
+  }
+
+  // Reads one whitespace-free chunk as one or more moves ("e4e5", "Nf3Nc6"), backtracking over split points.
+  function readMoves(state, s, depth) {
+    if (!s) return [];
+    if (depth > 8) return null;
+    for (var len = s.length; len >= 2; len--) {
+      var mv = matchMove(state, s.slice(0, len));
+      if (!mv) continue;
+      var rest = readMoves(applyMove(state, mv), s.slice(len), depth + 1);
+      if (rest) return [mv].concat(rest);
+    }
+    return null;
+  }
+
+  function diagnoseToken(state, tok) {
+    var legal = generateLegalMoves(state);
+    var reason = "unparseable";
+    tokenVariants(tok).forEach(function (v) {
+      var r = matchSpelling(legal, v);
+      if (r === "ambiguous") reason = "ambiguous";
+      else if (reason === "unparseable" && /[a-h][1-8]|^O-O/i.test(v)) reason = "no_legal_match";
+    });
+    var destMatch = /([a-hA-H][1-8])(?!.*[a-hA-H][1-8])/.exec(tok);
+    var near = [];
+    if (destMatch) {
+      var dest = squareFromAlgebraic(destMatch[1].toLowerCase());
+      near = legal.filter(function (mv) { return mv.to === dest; });
+    }
+    var pieceLetter = /^[KQRBN]/.exec(tok.toUpperCase());
+    if (!near.length && pieceLetter) near = legal.filter(function (mv) { return pieceTypeOf(mv.piece) === pieceLetter[0]; });
+    var seen = {};
+    var suggestions = near.map(function (mv) { return moveToSan(state, mv); })
+      .filter(function (s) { if (seen[s]) return false; seen[s] = true; return true; }).slice(0, 8);
+    return { reason: reason, suggestions: suggestions };
+  }
+
+  function parseMovetext(rootState, raw) {
+    var state = clone(rootState);
+    var positions = [state];
+    var moves = [];
+    var skipped = [];
+    var error = null;
+    var chunks = splitMovetext(raw);
+    for (var i = 0; i < chunks.length && !error; i++) {
+      var chunk = chunks[i];
+      // "soft" readings may just be commentary, so a failed soft reading is skipped rather than reported.
+      var readings = [];
+      if (HANGUL_RE.test(chunk)) {
+        readings.push({ text: chunk.replace(/[ㄱ-ㅣ가-힣]+/g, ""), soft: true });
+        readings.push({ text: hangulToKeys(chunk), soft: true });
+      } else {
+        readings.push({ text: chunk, soft: false });
+        var ocrFixed = chunk.replace(/([a-hA-H])[lI|](?=[=+#(\/QRBN]|$)/g, "$11"); // "Rfl" → Rf1
+        if (ocrFixed !== chunk) readings.push({ text: ocrFixed, soft: true });
+      }
+      var seq = null, hardFail = null;
+      for (var k = 0; k < readings.length && !seq; k++) {
+        var rd = readings[k];
+        if (!rd.text || rd.text.length > 40 || !looksLikeMove(rd.text)) continue;
+        seq = readMoves(state, rd.text, 0);
+        if (!seq && !rd.soft && !hardFail) hardFail = rd.text;
+      }
+      if (seq) {
+        seq.forEach(function (mv) {
+          var san = moveToSan(state, mv);
+          state = applyMove(state, mv);
+          positions.push(state);
+          moves.push({ move: mv, san: san });
+        });
+      } else if (hardFail) {
+        var diag = diagnoseToken(state, hardFail);
+        error = { index: moves.length, token: chunk, reason: diag.reason, suggestions: diag.suggestions };
+      } else {
+        skipped.push(chunk);
+      }
+    }
+    return { positions: positions, moves: moves, error: error, skipped: skipped };
+  }
+
+  // ---------- app state ----------
+  var App = {
+    rootState: parseFEN(STANDARD_FEN),
+    bookPositions: null, bookMoves: [],
+    viewPositions: null, viewMoves: [],
+    currentPly: 0, divergeAt: null,
+    mode: "replay", flipped: false,
+    selectedSquare: null, legalTargets: [],
+    selectedPalette: null,
+    pendingPromotion: null,
+    parseError: null, parseSkipped: [],
+    drag: null
+  };
+  App.viewPositions = [clone(App.rootState)];
+  App.bookPositions = App.viewPositions.slice();
+
+  function displayState() { return App.mode === "setup" ? App.rootState : App.viewPositions[App.currentPly]; }
+
+  function resetDerivedFromRoot() {
+    App.viewPositions = [clone(App.rootState)];
+    App.viewMoves = [];
+    App.bookPositions = App.viewPositions.slice();
+    App.bookMoves = [];
+    App.currentPly = 0;
+    App.divergeAt = null;
+    App.parseError = null;
+    App.parseSkipped = [];
+    App.selectedSquare = null;
+    App.legalTargets = [];
+  }
+
+  function visualToSquare(row, col, flipped) {
+    return flipped ? sqOf(7 - col, row) : sqOf(col, 7 - row);
+  }
+  function squareToVisual(sq, flipped) {
+    var file = fileOf(sq), rank = rankOf(sq);
+    return flipped ? { row: rank, col: 7 - file } : { row: 7 - rank, col: file };
+  }
+
+  // ---------- DOM refs ----------
+  var boardEl = document.getElementById("board");
+  var boardWrapEl = document.getElementById("boardWrap");
+  var promoOverlayEl = document.getElementById("promoOverlay");
+  var firstBtn = document.getElementById("firstBtn");
+  var prevBtn = document.getElementById("prevBtn");
+  var nextBtn = document.getElementById("nextBtn");
+  var lastBtn = document.getElementById("lastBtn");
+  var flipBtn = document.getElementById("flipBtn");
+  var plyIndicatorEl = document.getElementById("plyIndicator");
+  var statusBannerEl = document.getElementById("statusBanner");
+  var fenDisplayEl = document.getElementById("fenDisplay");
+  var copyFenBtn = document.getElementById("copyFenBtn");
+  var backToBookBtn = document.getElementById("backToBookBtn");
+  var divergeNoteEl = document.getElementById("divergeNote");
+  var tabReplayBtn = document.getElementById("tabReplayBtn");
+  var tabSetupBtn = document.getElementById("tabSetupBtn");
+  var panelReplay = document.getElementById("panelReplay");
+  var panelSetup = document.getElementById("panelSetup");
+  var movetextInput = document.getElementById("movetextInput");
+  var playBtn = document.getElementById("playBtn");
+  var parseErrorEl = document.getElementById("parseError");
+  var parseSkippedEl = document.getElementById("parseSkipped");
+  var moveListEl = document.getElementById("moveList");
+  var copyPgnBtn = document.getElementById("copyPgnBtn");
+  var paletteEl = document.getElementById("palette");
+  var stdStartBtn = document.getElementById("stdStartBtn");
+  var emptyBoardBtn = document.getElementById("emptyBoardBtn");
+  var turnWhite = document.getElementById("turnWhite");
+  var turnBlack = document.getElementById("turnBlack");
+  var castleWK = document.getElementById("castleWK");
+  var castleWQ = document.getElementById("castleWQ");
+  var castleBK = document.getElementById("castleBK");
+  var castleBQ = document.getElementById("castleBQ");
+  var epInput = document.getElementById("epInput");
+  var fenInput = document.getElementById("fenInput");
+  var loadFenBtn = document.getElementById("loadFenBtn");
+  var fenLoadErrorEl = document.getElementById("fenLoadError");
+  var tabPhotoBtn = document.getElementById("tabPhotoBtn");
+  var panelPhoto = document.getElementById("panelPhoto");
+  var photoUnavailableEl = document.getElementById("photoUnavailable");
+  var photoControlsEl = document.getElementById("photoControls");
+  var photoInput = document.getElementById("photoInput");
+  var photoPreview = document.getElementById("photoPreview");
+  var preciseToggle = document.getElementById("preciseToggle");
+  var recognizeBtn = document.getElementById("recognizeBtn");
+  var stopRecogBtn = document.getElementById("stopRecogBtn");
+  var photoStatusEl = document.getElementById("photoStatus");
+  var photoResultsEl = document.getElementById("photoResults");
+
+  // ---------- tabs ----------
+  function setTab(name) {
+    App.mode = name === "setup" ? "setup" : "replay";
+    [["replay", tabReplayBtn, panelReplay], ["setup", tabSetupBtn, panelSetup], ["photo", tabPhotoBtn, panelPhoto]].forEach(function (t) {
+      t[1].classList.toggle("active", t[0] === name);
+      t[2].style.display = t[0] === name ? "flex" : "none";
+    });
+    App.selectedSquare = null; App.legalTargets = [];
+    if (name !== "setup") App.selectedPalette = null;
+    render();
+  }
+
+  // ---------- photo recognition (Claude via the artifact `sample` capability) ----------
+  var RECOG_PROMPT = [
+    "You are reading a photo of a page from a chess book. Extract (1) every chess diagram (board position) and (2) the game moves written in the text.",
+    "",
+    "DIAGRAMS: for each board diagram, produce a full FEN.",
+    "- Work rank by rank from rank 8 down to rank 1, file a to h. Count empty squares carefully; every rank must total 8 squares.",
+    "- Check orientation using the coordinate labels if printed. Books normally show White at the bottom; if the letters run h..a left-to-right or the ranks 1..8 top-to-bottom, the board is flipped: convert to the standard FEN anyway.",
+    "- Hollow/white pieces are White (uppercase), solid/black pieces are Black (lowercase).",
+    "- Side to move: use the caption (e.g. 'White to move', '백 차례', a '▲/△' marker) or the first move printed after the diagram (a move like '12...Nf6' means Black to move). Default to White.",
+    "- Castling: grant a right only if that king and rook stand on their original squares. En passant: '-' unless the text makes it clear.",
+    "- Fullmove number: the number of the next move printed after the diagram if there is one, otherwise 1.",
+    "",
+    "MOVES: copy the main line of the game as standard English SAN movetext, e.g. '1. e4 e5 2. Nf3 Nc6' or '14...Rd8 15. Qe2'.",
+    "- Convert figurine symbols (♔♕♖♗♘ etc.) and other-language piece letters (e.g. German K D T L S, French R D T F C) to English K Q R B N. Pawn moves have no letter.",
+    "- Keep captures 'x', checks '+', mate '#', castling 'O-O' / 'O-O-O', promotions like 'e8=Q'.",
+    "- Drop annotations (!, ?, evaluations, commentary). Put side-variations in parentheses or leave them out; only the main line matters.",
+    "- If the page has no moves, use an empty string.",
+    "",
+    "movetextStart: 0-based index of the diagram the movetext continues from, or \"initial\" if it starts from the standard starting position (it begins with '1.' and no diagram precedes it).",
+    "",
+    "Reply with ONLY this JSON object, no other text:",
+    '{"diagrams":[{"label":"short caption or number as printed in the book (original language)","fen":"<full FEN>","confidence":"high|medium|low","doubts":"squares you were unsure about, or empty"}],"movetext":"1. e4 e5 ...","movetextStart":"initial","notes":"anything the reader should double-check, in Korean, or empty"}'
+  ].join("\n");
+
+  var Photo = { sample: null, file: null, ctl: null, result: null };
+
+  function setPhotoStatus(text, isError) {
+    photoStatusEl.textContent = text || "";
+    photoStatusEl.className = "photo-status" + (isError ? " error" : "");
+  }
+
+  function setPhotoAvailable(ok) {
+    photoUnavailableEl.style.display = ok ? "none" : "block";
+    photoControlsEl.style.display = ok ? "flex" : "none";
+  }
+
+  function initPhoto() {
+    setPhotoAvailable(false);
+    photoInput.onchange = function () {
+      var f = photoInput.files && photoInput.files[0];
+      if (!f) return;
+      Photo.file = f;
+      if (photoPreview.src) URL.revokeObjectURL(photoPreview.src);
+      photoPreview.src = URL.createObjectURL(f);
+      photoPreview.style.display = "block";
+      recognizeBtn.disabled = false;
+      setPhotoStatus("");
+    };
+    recognizeBtn.onclick = runRecognition;
+    stopRecogBtn.onclick = function () { if (Photo.ctl) Photo.ctl.abort(); };
+    photoResultsEl.addEventListener("click", onPhotoResultClick);
+
+    if (!window.claude || typeof window.claude.use !== "function") return;
+    window.claude.use("sample").then(function (sample) {
+      if (!sample) return;
+      return sample.limits().catch(function () { return null; }).then(function (limits) {
+        if (!limits || !limits.images) return;
+        Photo.sample = sample;
+        if (limits.images.mediaTypes && limits.images.mediaTypes.length) photoInput.accept = limits.images.mediaTypes.join(",");
+        setPhotoAvailable(true);
+      });
+    }).catch(function () {});
+  }
+
+  var SAMPLE_ERROR_TEXT = {
+    not_granted: "Claude 사용이 허용되지 않았습니다. 이 페이지를 다시 열면 다시 요청할 수 있습니다.",
+    sampling_disabled: "이 계정에서는 Claude를 사용할 수 없습니다.",
+    images_unavailable: "이 환경에서는 사진을 보낼 수 없습니다.",
+    image_rejected: "이 사진은 처리할 수 없습니다. JPEG/PNG 등 다른 사진으로 시도해 주세요.",
+    rate_limited: "요청이 너무 많거나 사용량 한도에 도달했습니다. 잠시 후 다시 시도해 주세요.",
+    session_expired: "로그인이 만료되었습니다. 다시 로그인해 주세요.",
+    refused: "이 사진은 인식할 수 없다는 응답을 받았습니다. 다른 사진으로 시도해 주세요.",
+    invalid_json: "결과 형식을 읽지 못했습니다. 다시 시도해 주세요.",
+    empty_completion: "빈 응답을 받았습니다. 더 가깝게 찍은 사진으로 시도해 주세요."
+  };
+  var PERMANENT_SAMPLE_ERRORS = ["not_granted", "sampling_disabled", "not_declared", "capability_disabled", "capability_removed", "images_unavailable"];
+
+  function runRecognition() {
+    if (!Photo.sample || !Photo.file) return;
+    var ctl = new AbortController();
+    Photo.ctl = ctl;
+    recognizeBtn.disabled = true;
+    photoInput.disabled = true;
+    stopRecogBtn.style.display = "";
+    setPhotoStatus("사진을 분석하는 중… (보통 20초~1분 걸립니다)");
+    Photo.sample.json(RECOG_PROMPT, {
+      images: Photo.file,
+      modelTier: preciseToggle.checked ? "complex" : "default",
+      signal: ctl.signal,
+      onText: function (u) { setPhotoStatus("결과를 받는 중… (" + u.text.length + "자)"); }
+    }).then(function (data) {
+      Photo.result = normalizeRecognition(data);
+      setPhotoStatus(Photo.result.diagrams.length || Photo.result.movetext ? "인식 완료. 아래 결과를 확인하세요." : "사진에서 다이어그램이나 기보를 찾지 못했습니다.");
+      renderPhotoResults();
+    }).catch(function (e) {
+      var code = e && e.code;
+      if (code === "cancelled") { setPhotoStatus("중지했습니다."); return; }
+      setPhotoStatus(SAMPLE_ERROR_TEXT[code] || "인식 중 문제가 발생했습니다. 다시 시도해 주세요.", true);
+      if (PERMANENT_SAMPLE_ERRORS.indexOf(code) !== -1) { Photo.sample = null; recognizeBtn.disabled = true; }
+    }).then(function () {
+      if (Photo.ctl === ctl) Photo.ctl = null;
+      stopRecogBtn.style.display = "none";
+      photoInput.disabled = false;
+      recognizeBtn.disabled = !Photo.sample || !Photo.file;
+    });
+  }
+
+  // Keep castling rights only where king and rook actually stand on their home squares.
+  function sanitizeState(state) {
+    var b = state.board;
+    var c = state.castling;
+    c.K = c.K && b[4] === "K" && b[7] === "R";
+    c.Q = c.Q && b[4] === "K" && b[0] === "R";
+    c.k = c.k && b[60] === "k" && b[63] === "r";
+    c.q = c.q && b[60] === "k" && b[56] === "r";
+    if (state.ep != null && !(rankOf(state.ep) === 2 || rankOf(state.ep) === 5)) state.ep = null;
+    return state;
+  }
+
+  function diagramWarnings(state) {
+    var w = [];
+    var count = { K: 0, k: 0 };
+    var pawnOnEdge = false;
+    state.board.forEach(function (p, sq) {
+      if (p === "K" || p === "k") count[p]++;
+      if ((p === "P" || p === "p") && (rankOf(sq) === 0 || rankOf(sq) === 7)) pawnOnEdge = true;
+    });
+    if (count.K !== 1) w.push("백 킹이 " + count.K + "개입니다");
+    if (count.k !== 1) w.push("흑 킹이 " + count.k + "개입니다");
+    if (pawnOnEdge) w.push("1랭크나 8랭크에 폰이 있습니다");
+    if (isInCheck(state.board, state.turn === "w" ? "b" : "w")) w.push("차례가 아닌 쪽이 체크 상태입니다 (차례 확인 필요)");
+    return w;
+  }
+
+  function normalizeRecognition(data) {
+    data = data && typeof data === "object" ? data : {};
+    var diagrams = [];
+    (Array.isArray(data.diagrams) ? data.diagrams : []).forEach(function (d, i) {
+      if (!d || typeof d.fen !== "string") return;
+      var state;
+      try { state = sanitizeState(parseFEN(d.fen)); } catch (err) { return; }
+      diagrams.push({
+        label: typeof d.label === "string" && d.label.trim() ? d.label.trim() : "다이어그램 " + (i + 1),
+        state: state,
+        confidence: d.confidence,
+        doubts: typeof d.doubts === "string" ? d.doubts.trim() : "",
+        warnings: diagramWarnings(state)
+      });
+    });
+    var start = data.movetextStart;
+    var startIdx = (typeof start === "number" && start >= 0 && start < diagrams.length) ? start : -1;
+    return {
+      diagrams: diagrams,
+      movetext: typeof data.movetext === "string" ? data.movetext.trim() : "",
+      startIdx: startIdx,
+      notes: typeof data.notes === "string" ? data.notes.trim() : ""
+    };
+  }
+
+  function miniBoardHtml(state) {
+    var html = '<div class="mini-board" aria-hidden="true">';
+    for (var row = 0; row < 8; row++) {
+      for (var col = 0; col < 8; col++) {
+        var sq = visualToSquare(row, col, false);
+        var piece = state.board[sq];
+        html += '<span class="' + ((fileOf(sq) + rankOf(sq)) % 2 === 1 ? "l" : "d") + '">' +
+                (piece ? '<img src="' + SPRITE[piece] + '" alt="">' : "") + "</span>";
+      }
+    }
+    return html + "</div>";
+  }
+
+  var CONFIDENCE_TEXT = { high: "높음", medium: "보통", low: "낮음" };
+
+  function renderPhotoResults() {
+    var r = Photo.result;
+    if (!r) { photoResultsEl.innerHTML = ""; return; }
+    var html = "";
+    r.diagrams.forEach(function (d, i) {
+      var meta = [];
+      meta.push("<div><strong>" + escapeHtml(d.label) + "</strong> · " + (d.state.turn === "w" ? "백 차례" : "흑 차례") +
+                (CONFIDENCE_TEXT[d.confidence] ? " · 인식 신뢰도 " + CONFIDENCE_TEXT[d.confidence] : "") + "</div>");
+      if (d.doubts) meta.push('<div class="warn-text">불확실: ' + escapeHtml(d.doubts) + "</div>");
+      d.warnings.forEach(function (w) { meta.push('<div class="warn-text">⚠ ' + escapeHtml(w) + "</div>"); });
+      meta.push('<div class="fen">' + escapeHtml(toFEN(d.state)) + "</div>");
+      meta.push('<div style="display:flex; gap:6px; flex-wrap:wrap;">' +
+                '<button class="btn small" data-act="load-diagram" data-idx="' + i + '">이 국면 불러오기</button>' +
+                '<button class="btn small" data-act="edit-diagram" data-idx="' + i + '">세팅 탭에서 수정</button></div>');
+      html += '<div class="result-card"><div class="diagram-row">' + miniBoardHtml(d.state) +
+              '<div class="diagram-meta">' + meta.join("") + "</div></div></div>";
+    });
+
+    if (r.movetext || r.diagrams.length) {
+      var options = '<option value="-1"' + (r.startIdx === -1 ? " selected" : "") + ">표준 시작 위치에서</option>";
+      r.diagrams.forEach(function (d, i) {
+        options += '<option value="' + i + '"' + (r.startIdx === i ? " selected" : "") + ">" + escapeHtml(d.label) + "에서</option>";
+      });
+      html += '<div class="result-card"><h3>인식된 기보</h3>' +
+              '<textarea class="recog-movetext" id="recogMovetext" placeholder="기보가 인식되지 않았습니다. 직접 입력할 수도 있습니다.">' + escapeHtml(r.movetext) + "</textarea>" +
+              '<div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">' +
+              '<select class="start-select" id="recogStart" aria-label="시작 국면">' + options + "</select>" +
+              '<button class="btn primary small" data-act="play">보드에서 재생</button></div></div>';
+    }
+    if (r.notes) html += '<div class="hint">' + escapeHtml(r.notes) + "</div>";
+    photoResultsEl.innerHTML = html;
+  }
+
+  function onPhotoResultClick(e) {
+    var btn = e.target.closest("button[data-act]");
+    if (!btn || !Photo.result) return;
+    var act = btn.dataset.act;
+    if (act === "load-diagram" || act === "edit-diagram") {
+      var d = Photo.result.diagrams[Number(btn.dataset.idx)];
+      App.rootState = clone(d.state);
+      resetDerivedFromRoot();
+      movetextInput.value = "";
+      setTab(act === "edit-diagram" ? "setup" : "replay");
+    } else if (act === "play") {
+      var idx = Number(document.getElementById("recogStart").value);
+      var text = document.getElementById("recogMovetext").value;
+      App.rootState = idx >= 0 ? clone(Photo.result.diagrams[idx].state) : parseFEN(STANDARD_FEN);
+      // The first move number in the text ("14." / "14...") decides who moves first.
+      var lead = /^\s*(\d+)\s*(\.\.\.|…|\.)/.exec(text);
+      if (idx >= 0 && lead) {
+        App.rootState.turn = lead[2] === "." ? "w" : "b";
+        App.rootState.fullmove = Number(lead[1]);
+        App.rootState.ep = null;
+      }
+      resetDerivedFromRoot();
+      movetextInput.value = text;
+      setTab("replay");
+      playBtn.click();
+    }
+  }
+
+  // ---------- rendering ----------
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function renderBoard() {
+    var state = displayState();
+    var flipped = App.flipped;
+    var check = isInCheck(state.board, state.turn);
+    var checkedKingSq = check ? kingSquare(state.board, state.turn) : -1;
+    var lastMove = (App.mode === "replay" && App.currentPly > 0) ? App.viewMoves[App.currentPly - 1].move : null;
+    var html = "";
+    for (var row = 0; row < 8; row++) {
+      for (var col = 0; col < 8; col++) {
+        var sq = visualToSquare(row, col, flipped);
+        var isLight = (fileOf(sq) + rankOf(sq)) % 2 === 1;
+        var classes = ["sq", isLight ? "light" : "dark"];
+        if (App.selectedSquare === sq) classes.push("selected");
+        if (App.drag && App.drag.fromSq === sq) classes.push("drag-source");
+        if (lastMove && (lastMove.from === sq || lastMove.to === sq)) classes.push("last-move");
+        if (sq === checkedKingSq) classes.push("check");
+        var isLegalTarget = App.legalTargets.indexOf(sq) !== -1;
+        var piece = state.board[sq];
+        if (isLegalTarget) classes.push(piece ? "legal-capture" : "legal-target");
+        var inner = "";
+        if (piece) {
+          inner += pieceImgHtml(piece);
+        } else if (isLegalTarget) {
+          inner += '<span class="dot"></span>';
+        }
+        if (row === 7) inner += '<span class="coord file">' + "abcdefgh"[fileOf(sq)] + "</span>";
+        if (col === 0) inner += '<span class="coord rank">' + (rankOf(sq) + 1) + "</span>";
+        html += '<div class="' + classes.join(" ") + '" data-sq="' + sq + '">' + inner + "</div>";
+      }
+    }
+    boardEl.innerHTML = html;
+    renderPromotionPopup(state);
+  }
+
+  function renderPromotionPopup() {
+    var p = App.pendingPromotion;
+    if (!p) { promoOverlayEl.style.display = "none"; promoOverlayEl.innerHTML = ""; return; }
+    var vis = squareToVisual(p.toSq, App.flipped);
+    var start = vis.row < 4 ? vis.row : vis.row - 3;
+    var pieces = p.color === "w" ? ["Q","R","B","N"] : ["q","r","b","n"];
+    var html = "";
+    for (var i = 0; i < 4; i++) {
+      var r = start + i;
+      html += '<button type="button" class="promo-choice" style="grid-row:' + (r + 1) + ";grid-column:" + (vis.col + 1) +
+              '" data-piece="' + pieces[i] + '">' + pieceImgHtml(pieces[i]) + "</button>";
+    }
+    promoOverlayEl.innerHTML = html;
+    promoOverlayEl.style.display = "grid";
+  }
+
+  function renderToolbar() {
+    var last = App.viewPositions.length - 1;
+    firstBtn.disabled = App.currentPly <= 0;
+    prevBtn.disabled = App.currentPly <= 0;
+    nextBtn.disabled = App.currentPly >= last;
+    lastBtn.disabled = App.currentPly >= last;
+    plyIndicatorEl.textContent = App.currentPly + " / " + last;
+
+    var state = displayState();
+    var status = positionStatus(state);
+    var text = state.turn === "w" ? "백 차례" : "흑 차례";
+    var cls = "status-banner";
+    if (status === "checkmate") { text = (state.turn === "w" ? "흑" : "백") + " 승 — 체크메이트"; cls += " danger"; }
+    else if (status === "stalemate") { text = "스테일메이트 (무승부)"; cls += " warn"; }
+    else if (status === "check") { text += " · 체크"; cls += " warn"; }
+    statusBannerEl.textContent = text;
+    statusBannerEl.className = cls;
+
+    fenDisplayEl.value = toFEN(state);
+  }
+
+  function renderParseError() {
+    var skipped = App.parseSkipped || [];
+    parseSkippedEl.style.display = skipped.length ? "block" : "none";
+    parseSkippedEl.textContent = skipped.length ? "수가 아니라서 건너뛴 부분: " + skipped.slice(0, 12).join(", ") + (skipped.length > 12 ? " …" : "") : "";
+    var err = App.parseError;
+    if (!err) { parseErrorEl.style.display = "none"; parseErrorEl.textContent = ""; return; }
+    var reasonText = {
+      unparseable: "수로 읽을 수 없습니다",
+      no_legal_match: "이 국면에서 둘 수 없는 수입니다",
+      ambiguous: "어느 기물인지 알 수 없습니다 (예: Nbd2처럼 출발 칸을 적어 주세요)"
+    }[err.reason] || "알 수 없는 오류";
+    var plyAbs = (App.rootState.turn === "b" ? 1 : 0) + err.index;
+    var moveNo = App.rootState.fullmove + Math.floor(plyAbs / 2);
+    var where = moveNo + (plyAbs % 2 === 0 ? ". 백" : "... 흑");
+    var text = where + ' "' + err.token + '" — ' + reasonText + ".";
+    if (err.suggestions && err.suggestions.length) text += " 가능한 수: " + err.suggestions.join(", ") + ".";
+    text += " 보드는 그 직전 국면에 멈춰 있습니다.";
+    parseErrorEl.textContent = text;
+    parseErrorEl.style.display = "block";
+  }
+
+  function chipHtml(moveObj, idx) {
+    if (!moveObj) return "";
+    var ply = idx + 1;
+    var classes = ["move-chip"];
+    if (App.currentPly === ply) classes.push("current");
+    if (App.divergeAt !== null && idx >= App.divergeAt) classes.push("diverged");
+    return '<button type="button" class="' + classes.join(" ") + '" data-ply="' + ply + '">' + escapeHtml(moveObj.san) + "</button>";
+  }
+
+  function renderMoveList() {
+    var html = "";
+    var turn = App.rootState.turn;
+    var moveNo = App.rootState.fullmove;
+    var i = 0;
+    if (turn === "b" && App.viewMoves.length > 0) {
+      html += '<span class="move-pair"><span class="move-num">' + moveNo + "...</span>" + chipHtml(App.viewMoves[0], 0) + "</span>";
+      i = 1; moveNo++;
+    }
+    for (; i < App.viewMoves.length; i += 2) {
+      var white = App.viewMoves[i];
+      var black = App.viewMoves[i + 1];
+      html += '<span class="move-pair"><span class="move-num">' + moveNo + ".</span>" +
+              chipHtml(white, i) + (black ? chipHtml(black, i + 1) : "") + "</span>";
+      moveNo++;
+    }
+    moveListEl.innerHTML = html || '<span class="muted">기보를 입력하고 재생 버튼을 누르세요.</span>';
+    divergeNoteEl.style.display = App.divergeAt !== null ? "inline-flex" : "none";
+  }
+
+  function renderSetupPanel() {
+    Array.prototype.forEach.call(paletteEl.children, function (btn) {
+      btn.classList.toggle("selected", App.selectedPalette === btn.dataset.piece);
+    });
+    turnWhite.checked = App.rootState.turn === "w";
+    turnBlack.checked = App.rootState.turn === "b";
+    castleWK.checked = App.rootState.castling.K;
+    castleWQ.checked = App.rootState.castling.Q;
+    castleBK.checked = App.rootState.castling.k;
+    castleBQ.checked = App.rootState.castling.q;
+    epInput.value = App.rootState.ep != null ? algebraic(App.rootState.ep) : "";
+  }
+
+  function render() {
+    renderBoard();
+    renderToolbar();
+    renderParseError();
+    renderMoveList();
+    renderSetupPanel();
+  }
+
+  // ---------- clipboard ----------
+  function copyToClipboard(text, btn) {
+    function done() {
+      if (!btn) return;
+      var original = btn.textContent;
+      btn.textContent = "복사됨!";
+      setTimeout(function () { btn.textContent = original; }, 1200);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(function () { fallbackCopy(text); done(); });
+    } else {
+      fallbackCopy(text); done();
+    }
+  }
+  function fallbackCopy(text) {
+    var ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    try { document.execCommand("copy"); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+
+  function buildMovetext() {
+    var parts = [];
+    var moveNo = App.rootState.fullmove;
+    var turn = App.rootState.turn;
+    App.viewMoves.forEach(function (m, i) {
+      if (turn === "w") { parts.push(moveNo + "." + m.san); }
+      else {
+        if (i === 0) parts.push(moveNo + "..." + m.san); else parts.push(m.san);
+        moveNo++;
+      }
+      turn = turn === "w" ? "b" : "w";
+    });
+    return parts.join(" ");
+  }
+
+  // ---------- move commit ----------
+  function finalizeMove(state, move) {
+    var bookMove = (App.divergeAt === null && App.currentPly < App.bookMoves.length) ? App.bookMoves[App.currentPly].move : null;
+    var isBookMove = bookMove && bookMove.from === move.from && bookMove.to === move.to &&
+                      (bookMove.promotion || null) === (move.promotion || null);
+    if (isBookMove) {
+      App.currentPly += 1;
+    } else {
+      App.viewPositions = App.viewPositions.slice(0, App.currentPly + 1);
+      App.viewMoves = App.viewMoves.slice(0, App.currentPly);
+      if (App.divergeAt === null) App.divergeAt = App.currentPly;
+      var san = moveToSan(state, move);
+      var newState = applyMove(state, move);
+      App.viewPositions.push(newState);
+      App.viewMoves.push({ move: move, san: san, manual: true });
+      App.currentPly += 1;
+    }
+    App.selectedSquare = null;
+    App.legalTargets = [];
+    App.pendingPromotion = null;
+    render();
+  }
+
+  function tryMove(fromSq, toSq, promoChoice) {
+    if (App.mode !== "replay") return false;
+    var state = displayState();
+    var legal = generateLegalMoves(state).filter(function (m) { return m.from === fromSq && m.to === toSq; });
+    if (legal.length === 0) return false;
+    var move;
+    if (legal.length > 1) {
+      if (promoChoice) {
+        move = legal.filter(function (m) { return m.promotion && m.promotion.toUpperCase() === promoChoice.toUpperCase(); })[0];
+        if (!move) return false;
+      } else {
+        App.pendingPromotion = { fromSq: fromSq, toSq: toSq, color: colorOf(state.board[fromSq]) };
+        render();
+        return true;
+      }
+    } else {
+      move = legal[0];
+    }
+    finalizeMove(state, move);
+    return true;
+  }
+
+  // ---------- click / setup interactions ----------
+  function onSquareClick(sq) {
+    if (App.pendingPromotion) return;
+    if (App.mode === "setup") { handleSetupClick(sq); return; }
+    var state = displayState();
+    var piece = state.board[sq];
+    if (App.selectedSquare != null && App.legalTargets.indexOf(sq) !== -1) {
+      tryMove(App.selectedSquare, sq);
+      return;
+    }
+    if (piece && colorOf(piece) === state.turn) {
+      App.selectedSquare = sq;
+      App.legalTargets = generateLegalMoves(state).filter(function (m) { return m.from === sq; }).map(function (m) { return m.to; });
+    } else {
+      App.selectedSquare = null;
+      App.legalTargets = [];
+    }
+    render();
+  }
+
+  function handleSetupClick(sq) {
+    if (App.selectedPalette === "erase") {
+      App.rootState.board[sq] = null;
+      resetDerivedFromRoot();
+      render();
+    } else if (App.selectedPalette) {
+      App.rootState.board[sq] = App.selectedPalette;
+      resetDerivedFromRoot();
+      render();
+    }
+  }
+
+  // ---------- drag & drop ----------
+  var ghostEl = null;
+  function createGhost(piece, x, y) {
+    var sqSize = getComputedStyle(boardEl).getPropertyValue("--sq-size") || "44px";
+    ghostEl = document.createElement("div");
+    ghostEl.className = "drag-ghost";
+    ghostEl.innerHTML = '<img class="piece" src="' + SPRITE[piece] + '" alt="" style="width:calc(' + sqSize.trim() + ' * 0.82);height:calc(' + sqSize.trim() + ' * 0.82);">';
+    document.body.appendChild(ghostEl);
+    moveGhost(x, y);
+  }
+  function moveGhost(x, y) { if (ghostEl) ghostEl.style.transform = "translate(" + x + "px," + y + "px) translate(-50%,-50%)"; }
+  function removeGhost() { if (ghostEl) { ghostEl.remove(); ghostEl = null; } }
+
+  function squareFromPoint(x, y) {
+    var rect = boardEl.getBoundingClientRect();
+    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) return null;
+    var col = Math.min(7, Math.max(0, Math.floor((x - rect.left) / rect.width * 8)));
+    var row = Math.min(7, Math.max(0, Math.floor((y - rect.top) / rect.height * 8)));
+    return visualToSquare(row, col, App.flipped);
+  }
+
+  function onPointerMove(e) {
+    if (!App.drag) return;
+    var dx = e.clientX - App.drag.startX, dy = e.clientY - App.drag.startY;
+    if (dx * dx + dy * dy > 25) App.drag.moved = true;
+    moveGhost(e.clientX, e.clientY);
+  }
+
+  function onPointerUp(e) {
+    window.removeEventListener("pointermove", onPointerMove);
+    var drag = App.drag;
+    App.drag = null;
+    removeGhost();
+    if (!drag) return;
+    var targetSq = squareFromPoint(e.clientX, e.clientY);
+    if (!drag.moved) {
+      onSquareClick(drag.fromSq);
+      return;
+    }
+    if (App.mode === "setup") {
+      if (targetSq == null) { App.rootState.board[drag.fromSq] = null; }
+      else if (targetSq !== drag.fromSq) { App.rootState.board[targetSq] = drag.pieceChar; App.rootState.board[drag.fromSq] = null; }
+      resetDerivedFromRoot();
+      render();
+    } else {
+      if (targetSq != null && targetSq !== drag.fromSq) {
+        tryMove(drag.fromSq, targetSq);
+      } else {
+        render();
+      }
+    }
+  }
+
+  function onPointerDown(e) {
+    var sqEl = e.target.closest(".sq");
+    if (!sqEl) return;
+    var sq = Number(sqEl.dataset.sq);
+    if (App.pendingPromotion) return;
+    var state = displayState();
+    var piece = state.board[sq];
+    if (!piece) { onSquareClick(sq); return; }
+    if (App.mode === "replay" && colorOf(piece) !== state.turn) { onSquareClick(sq); return; }
+    e.preventDefault();
+    App.drag = { fromSq: sq, pieceChar: piece, moved: false, startX: e.clientX, startY: e.clientY };
+    if (App.mode === "replay") {
+      App.selectedSquare = sq;
+      App.legalTargets = generateLegalMoves(state).filter(function (m) { return m.from === sq; }).map(function (m) { return m.to; });
+    }
+    createGhost(piece, e.clientX, e.clientY);
+    render();
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp, { once: true });
+  }
+
+  // ---------- init ----------
+  function init() {
+    buildSprites();
+    Array.prototype.forEach.call(paletteEl.children, function (btn) {
+      if (btn.dataset.piece !== "erase") btn.innerHTML = pieceImgHtml(btn.dataset.piece);
+    });
+
+    boardEl.addEventListener("pointerdown", onPointerDown);
+
+    var ro = new ResizeObserver(function (entries) {
+      entries.forEach(function (entry) {
+        boardEl.style.setProperty("--sq-size", (entry.contentRect.width / 8) + "px");
+      });
+    });
+    ro.observe(boardEl);
+
+    promoOverlayEl.addEventListener("click", function (e) {
+      var btn = e.target.closest(".promo-choice");
+      if (!btn) return;
+      var p = App.pendingPromotion;
+      if (!p) return;
+      tryMove(p.fromSq, p.toSq, btn.dataset.piece.toUpperCase());
+    });
+
+    firstBtn.onclick = function () { App.currentPly = 0; App.selectedSquare = null; App.legalTargets = []; render(); };
+    prevBtn.onclick = function () { App.currentPly = Math.max(0, App.currentPly - 1); App.selectedSquare = null; App.legalTargets = []; render(); };
+    nextBtn.onclick = function () { App.currentPly = Math.min(App.viewPositions.length - 1, App.currentPly + 1); App.selectedSquare = null; App.legalTargets = []; render(); };
+    lastBtn.onclick = function () { App.currentPly = App.viewPositions.length - 1; App.selectedSquare = null; App.legalTargets = []; render(); };
+    flipBtn.onclick = function () { App.flipped = !App.flipped; render(); };
+    copyFenBtn.onclick = function () { copyToClipboard(toFEN(displayState()), copyFenBtn); };
+    copyPgnBtn.onclick = function () { copyToClipboard(buildMovetext(), copyPgnBtn); };
+    backToBookBtn.onclick = function () {
+      if (App.divergeAt === null) return;
+      App.viewPositions = App.bookPositions.slice(0, App.divergeAt + 1);
+      App.viewMoves = App.bookMoves.slice(0, App.divergeAt);
+      App.currentPly = App.divergeAt;
+      App.divergeAt = null;
+      App.selectedSquare = null;
+      App.legalTargets = [];
+      render();
+    };
+
+    document.addEventListener("keydown", function (e) {
+      var tag = document.activeElement && document.activeElement.tagName;
+      if (tag === "TEXTAREA" || tag === "INPUT") return;
+      if (App.mode !== "replay") return;
+      if (e.key === "ArrowLeft") { prevBtn.click(); }
+      else if (e.key === "ArrowRight") { nextBtn.click(); }
+      else if (e.key === "Home") { firstBtn.click(); }
+      else if (e.key === "End") { lastBtn.click(); }
+    });
+
+    moveListEl.addEventListener("click", function (e) {
+      var btn = e.target.closest(".move-chip");
+      if (!btn) return;
+      App.currentPly = Number(btn.dataset.ply);
+      App.selectedSquare = null;
+      App.legalTargets = [];
+      render();
+    });
+
+    tabReplayBtn.onclick = function () { setTab("replay"); };
+    tabSetupBtn.onclick = function () { setTab("setup"); };
+    tabPhotoBtn.onclick = function () { setTab("photo"); };
+    initPhoto();
+
+    playBtn.onclick = function () {
+      var result = parseMovetext(App.rootState, movetextInput.value);
+      try { localStorage.setItem(MOVETEXT_KEY, movetextInput.value); } catch (e) {}
+      App.bookPositions = result.positions;
+      App.bookMoves = result.moves;
+      App.viewPositions = result.positions.slice();
+      App.viewMoves = result.moves.slice();
+      App.divergeAt = null;
+      // On an error, show the position where reading stopped so the bad move is easy to find.
+      App.currentPly = result.error ? result.moves.length : 0;
+      App.parseError = result.error;
+      App.parseSkipped = result.skipped;
+      App.selectedSquare = null; App.legalTargets = [];
+      render();
+    };
+    movetextInput.addEventListener("keydown", function (e) {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") playBtn.click();
+    });
+    movetextInput.addEventListener("paste", function () { setTimeout(function () { playBtn.click(); }, 0); });
+    try { var saved = localStorage.getItem(MOVETEXT_KEY); if (saved) movetextInput.value = saved; } catch (e) {}
+
+    Array.prototype.forEach.call(paletteEl.children, function (btn) {
+      btn.onclick = function () {
+        App.selectedPalette = App.selectedPalette === btn.dataset.piece ? null : btn.dataset.piece;
+        renderSetupPanel();
+      };
+    });
+
+    stdStartBtn.onclick = function () { App.rootState = parseFEN(STANDARD_FEN); resetDerivedFromRoot(); render(); };
+    emptyBoardBtn.onclick = function () {
+      App.rootState = { board: new Array(64).fill(null), turn: "w",
+                         castling: { K: false, Q: false, k: false, q: false }, ep: null, halfmove: 0, fullmove: 1 };
+      resetDerivedFromRoot(); render();
+    };
+
+    [turnWhite, turnBlack].forEach(function (r) {
+      r.onchange = function () { App.rootState.turn = r.value; resetDerivedFromRoot(); render(); };
+    });
+    function bindCastle(el, key) {
+      el.onchange = function () { App.rootState.castling[key] = el.checked; resetDerivedFromRoot(); render(); };
+    }
+    bindCastle(castleWK, "K"); bindCastle(castleWQ, "Q"); bindCastle(castleBK, "k"); bindCastle(castleBQ, "q");
+
+    epInput.onchange = function () {
+      var v = epInput.value.trim().toLowerCase();
+      if (!v) { App.rootState.ep = null; }
+      else if (/^[a-h][1-8]$/.test(v)) { App.rootState.ep = squareFromAlgebraic(v); }
+      else { epInput.value = App.rootState.ep != null ? algebraic(App.rootState.ep) : ""; return; }
+      resetDerivedFromRoot(); render();
+    };
+
+    loadFenBtn.onclick = function () {
+      try {
+        var parsed = parseFEN(fenInput.value);
+        App.rootState = parsed;
+        fenLoadErrorEl.textContent = "";
+        resetDerivedFromRoot();
+        render();
+      } catch (err) {
+        fenLoadErrorEl.textContent = err.message || "FEN을 해석할 수 없습니다.";
+      }
+    };
+
+    render();
+  }
+
+  init();
+
+  // Offline support when installed as a PWA (GitHub Pages). Inside claude.ai this quietly does nothing.
+  if ("serviceWorker" in navigator && location.protocol === "https:") {
+    try { navigator.serviceWorker.register("sw.js").catch(function () {}); } catch (e) {}
+  }
+})();
+</script>
