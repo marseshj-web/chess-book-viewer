@@ -219,6 +219,9 @@
   .ply-indicator { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--text-muted); margin-left: 4px; }
 
   .status-banner { font-size: .88rem; padding: 6px 11px; border-radius: 8px; background: var(--surface-2); color: var(--text-muted); width: fit-content; }
+  .opening-name { font-size: .85rem; line-height: 1.45; overflow-wrap: anywhere; }
+  .opening-eco { font-family: var(--font-mono); font-size: .78rem; color: var(--text-muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; margin-right: 2px; }
+  .opening-en { color: var(--text-muted); font-size: .8rem; }
   .status-banner.warn { background: color-mix(in srgb, var(--warn) 18%, var(--surface-2)); color: var(--warn); }
   .status-banner.danger { background: color-mix(in srgb, var(--danger) 20%, var(--surface-2)); color: var(--danger); }
 
@@ -433,6 +436,7 @@
       </div>
 
       <div id="statusBanner" class="status-banner">백 차례</div>
+      <div id="openingName" class="opening-name" style="display:none;"></div>
 
       <div class="analysis">
         <div class="analysis-head">
@@ -676,7 +680,7 @@
           <div class="lib-fields">
             <div class="field-group">
               <label class="field-label" for="libTitle">제목</label>
-              <input id="libTitle" class="lib-input" type="text" maxlength="80" placeholder="예: 예제 12 (비우면 첫 수로 정함)">
+              <input id="libTitle" class="lib-input" type="text" maxlength="80" placeholder="예: 예제 12 (비우면 오프닝 이름으로 정함)">
             </div>
             <div class="field-group">
               <label class="field-label" for="libGroup">분류 (책 이름·장)</label>
@@ -1470,6 +1474,7 @@
   var flipBtn = document.getElementById("flipBtn");
   var plyIndicatorEl = document.getElementById("plyIndicator");
   var statusBannerEl = document.getElementById("statusBanner");
+  var openingNameEl = document.getElementById("openingName");
   var fenDisplayEl = document.getElementById("fenDisplay");
   var copyFenBtn = document.getElementById("copyFenBtn");
   var backToBookBtn = document.getElementById("backToBookBtn");
@@ -2058,6 +2063,7 @@
     quizStep();
     renderBoard();
     renderToolbar();
+    renderOpening();
     renderParseError();
     renderMoveList();
     renderSetupPanel();
@@ -2109,6 +2115,94 @@
       turn = turn === "w" ? "b" : "w";
     });
     return parts.join(" ");
+  }
+
+  // ---------- opening names ----------
+  // openings/openings.txt is built from the Lichess chess-openings list (CC0): one line per position,
+  // "board turn castling<TAB>ECO<TAB>name". Matching by position also catches transpositions.
+  var OPENINGS_URL = "openings/openings.txt";
+  var Openings = { map: null, failed: false };
+  var OPENING_KO = {
+    "Sicilian Defense": "시실리안 디펜스", "Ruy Lopez": "루이 로페즈", "Queen's Gambit Declined": "퀸즈 갬빗 거절",
+    "Queen's Gambit Accepted": "퀸즈 갬빗 수락", "Queen's Gambit": "퀸즈 갬빗", "French Defense": "프렌치 디펜스",
+    "Italian Game": "이탈리안 게임", "English Opening": "잉글리시 오프닝", "King's Gambit Accepted": "킹즈 갬빗 수락",
+    "King's Gambit Declined": "킹즈 갬빗 거절", "King's Gambit": "킹즈 갬빗", "King's Indian Defense": "킹스 인디언 디펜스",
+    "King's Indian Attack": "킹스 인디언 어택", "Caro-Kann Defense": "카로칸 디펜스", "Nimzo-Indian Defense": "님조 인디언 디펜스",
+    "Queen's Pawn Game": "퀸 폰 게임", "Semi-Slav Defense": "세미 슬라브 디펜스", "Slav Defense": "슬라브 디펜스",
+    "Dutch Defense": "더치 디펜스", "Benoni Defense": "베노니 디펜스", "Grünfeld Defense": "그륀펠트 디펜스",
+    "Neo-Grünfeld Defense": "네오 그륀펠트 디펜스", "Queen's Indian Defense": "퀸스 인디언 디펜스", "Alekhine Defense": "알레힌 디펜스",
+    "Scotch Game": "스카치 게임", "Indian Defense": "인디언 디펜스", "Petrov's Defense": "페트로프 디펜스",
+    "Four Knights Game": "포 나이츠 게임", "Three Knights Opening": "스리 나이츠 오프닝", "Zukertort Opening": "주커토트 오프닝",
+    "Scandinavian Defense": "스칸디나비안 디펜스", "Philidor Defense": "필리도르 디펜스", "Réti Opening": "레티 오프닝",
+    "Nimzowitsch Defense": "님조비치 디펜스", "Vienna Game": "비엔나 게임", "Bishop's Opening": "비숍스 오프닝",
+    "Modern Defense": "모던 디펜스", "King's Pawn Game": "킹 폰 게임", "King's Pawn Opening": "킹 폰 오프닝",
+    "King's Knight Opening": "킹스 나이트 오프닝", "Catalan Opening": "카탈란 오프닝", "Pirc Defense": "피르츠 디펜스",
+    "Bird Opening": "버드 오프닝", "Tarrasch Defense": "타라시 디펜스", "Polish Opening": "폴리시 오프닝",
+    "Bogo-Indian Defense": "보고 인디언 디펜스", "Old Indian Defense": "올드 인디언 디펜스", "Center Game": "센터 게임",
+    "Latvian Gambit": "라트비안 갬빗", "Ponziani Opening": "폰치아니 오프닝", "Trompowsky Attack": "트롬포프스키 어택",
+    "Benko Gambit": "벤코 갬빗", "Englund Gambit": "엥글룬드 갬빗", "London System": "런던 시스템", "Torre Attack": "토레 어택",
+    "Colle System": "콜레 시스템", "Danish Gambit": "데니시 갬빗", "Blackmar-Diemer Gambit": "블랙마-디머 갬빗",
+    "Hungarian Opening": "헝가리안 오프닝", "Grob Opening": "그롭 오프닝", "Nimzo-Larsen Attack": "님조-라르센 어택",
+    "Elephant Gambit": "엘리펀트 갬빗", "Richter-Veresov Attack": "리히터-베레소프 어택", "Owen Defense": "오언 디펜스",
+    "Van Geet Opening": "반 헤이트 오프닝", "Hippopotamus Defense": "히포포타무스 디펜스", "Blumenfeld Countergambit": "블루멘펠트 카운터갬빗",
+    "Budapest Defense": "부다페스트 디펜스", "Evans Gambit": "에반스 갬빗", "Two Knights Defense": "투 나이츠 디펜스",
+    "Rapport-Jobava System": "라포르트-요바바 시스템", "English Defense": "잉글리시 디펜스", "Bongcloud Attack": "봉클라우드 어택"
+  };
+
+  function positionKey(state) { return toFEN(state).split(" ").slice(0, 3).join(" "); }
+
+  function loadOpenings() {
+    fetch(OPENINGS_URL).then(function (r) {
+      if (!r.ok) throw new Error(r.status);
+      return r.text();
+    }).then(function (text) {
+      var map = new Map();
+      text.split("\n").forEach(function (line) {
+        var p = line.split("\t");
+        if (p.length === 3) map.set(p[0], { eco: p[1], name: p[2] });
+      });
+      Openings.map = map;
+      render();
+    }).catch(function () { Openings.failed = true; });
+  }
+
+  // "Sicilian Defense: Najdorf Variation" -> "시실리안 디펜스"; null when the family isn't in the list.
+  function openingKorean(name) {
+    var family = name.split(":")[0].split(", with")[0].trim();
+    if (OPENING_KO[family]) return OPENING_KO[family];
+    var m = /^(.*) (Accepted|Declined)$/.exec(family);
+    if (m && OPENING_KO[m[1]]) return OPENING_KO[m[1]] + (m[2] === "Accepted" ? " 수락" : " 거절");
+    return null;
+  }
+
+  // The deepest named position among positions[0..upto].
+  function openingAt(positions, upto) {
+    if (!Openings.map) return null;
+    for (var i = Math.min(upto, positions.length - 1); i >= 0; i--) {
+      var hit = Openings.map.get(positionKey(positions[i]));
+      if (hit) return { eco: hit.eco, name: hit.name, ko: openingKorean(hit.name), ply: i };
+    }
+    return null;
+  }
+
+  // Korean family name plus the English variation, e.g. "시실리안 디펜스: Najdorf Variation".
+  function openingShortName(o) {
+    var i = o.name.indexOf(":");
+    return o.ko ? o.ko + (i >= 0 ? o.name.slice(i) : "") : o.name;
+  }
+
+  function renderOpening() {
+    var o = App.mode === "replay" && App.viewMoves.length ? openingAt(App.viewPositions, App.currentPly) : null;
+    if (!o) { openingNameEl.style.display = "none"; return; }
+    openingNameEl.style.display = "";
+    var html = '<span class="opening-eco">' + escapeHtml(o.eco) + "</span> " +
+               (o.ko ? "<strong>" + escapeHtml(o.ko) + '</strong> <span class="opening-en">' + escapeHtml(o.name) + "</span>"
+                     : "<strong>" + escapeHtml(o.name) + "</strong>");
+    if (o.ply < App.currentPly && o.ply > 0) {
+      var n = moveNumberAt(o.ply - 1);
+      html += ' <span class="opening-en">· 이론 수순은 ' + n.no + (n.white ? ". " : "... ") + escapeHtml(App.viewMoves[o.ply - 1].san) + "까지</span>";
+    }
+    openingNameEl.innerHTML = html;
   }
 
   // ---------- saved games (기보함) ----------
@@ -2163,7 +2257,8 @@
       entry = { id: newLibraryId() };
       Library.items.push(entry);
     }
-    entry.title = libTitleEl.value.trim() || defaultTitle(text);
+    var opening = openingAt(useView ? App.viewPositions : App.bookPositions, Infinity);
+    entry.title = libTitleEl.value.trim() || (opening ? openingShortName(opening) : defaultTitle(text));
     entry.group = libGroupEl.value.trim();
     entry.fen = fen;
     entry.text = text;
@@ -3459,6 +3554,7 @@
     quizStartBtn.onclick = startQuiz;
 
     loadLibrary();
+    loadOpenings();
     tabLibraryBtn.onclick = function () { setTab("library"); };
     saveToLibBtn.onclick = function () { setTab("library"); libTitleEl.focus(); };
     libSaveBtn.onclick = function () { saveToLibrary(false); };

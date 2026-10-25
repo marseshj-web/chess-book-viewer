@@ -1,7 +1,8 @@
 // Offline support: serve the app shell from cache, refresh it in the background when online.
 // Bump CACHE when shipping changes so old caches are dropped.
-var CACHE = "chess-book-viewer-v7";
-var SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icons/icon-192.png", "./icons/icon-512.png", "./icons/apple-touch-icon.png", "./icons/icon.svg", "./engine/stockfish.asm.js"];
+var CACHE = "chess-book-viewer-v8";
+var SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icons/icon-192.png", "./icons/icon-512.png", "./icons/apple-touch-icon.png", "./icons/icon.svg", "./engine/stockfish.asm.js",
+  "./openings/openings.txt"];
 
 self.addEventListener("install", function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(SHELL); }).then(function () { return self.skipWaiting(); }));
