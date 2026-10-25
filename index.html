@@ -228,9 +228,9 @@
     border-radius: 6px; padding: 5px 8px; color: var(--text); font-family: inherit;
   }
 
-  .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+  .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: 14px; overflow-x: auto; scrollbar-width: none; }
   .tab-btn {
-    background: none; border: none; padding: 8px 14px; cursor: pointer;
+    background: none; border: none; padding: 8px 12px; cursor: pointer; white-space: nowrap; flex: none;
     color: var(--text-muted); border-bottom: 2px solid transparent; margin-bottom: -1px;
   }
   .tab-btn.active { color: var(--text); border-color: var(--accent); font-weight: 600; }
@@ -327,6 +327,31 @@
   .quiz-feedback { font-size: .9rem; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); }
   .quiz-feedback.correct, .quiz-feedback.done { background: var(--accent-soft); color: var(--text); font-weight: 600; }
   .quiz-feedback.wrong { background: color-mix(in srgb, var(--danger) 14%, var(--surface-2)); color: var(--danger); }
+  .lib-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .lib-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+  .lib-input { width: 100%; min-width: 0; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; color: var(--text); font: inherit; font-size: .88rem; }
+  textarea.lib-input { min-height: 72px; resize: vertical; font-family: var(--font-mono); font-size: .78rem; }
+  .lib-note { font-size: .82rem; color: var(--text-muted); }
+  .lib-note.error { color: var(--danger); }
+  .lib-note.ok { color: var(--accent); font-weight: 600; }
+  .lib-tools { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .lib-tools .lib-input { width: auto; flex: 1 1 140px; max-width: 220px; }
+  .lib-group { border-top: 1px solid var(--border); padding-top: 6px; }
+  .lib-group:first-child { border-top: none; padding-top: 0; }
+  .lib-group summary { cursor: pointer; font-size: .85rem; font-weight: 600; padding: 4px 0; }
+  .lib-group summary .lib-meta { font-weight: 400; }
+  .lib-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .lib-row { display: flex; align-items: center; gap: 8px; border-radius: 6px; }
+  .lib-row.current { background: var(--accent-soft); }
+  .lib-open { flex: 1; min-width: 0; text-align: left; background: none; border: none; color: var(--text); padding: 6px 8px; border-radius: 6px; cursor: pointer; display: flex; flex-direction: column; gap: 1px; font: inherit; }
+  .lib-open:hover { background: var(--surface-2); }
+  .lib-open:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .lib-title { font-size: .9rem; overflow-wrap: anywhere; }
+  .lib-meta { font-size: .75rem; color: var(--text-muted); }
+  .lib-row .btn.confirm { border-color: var(--danger); color: var(--danger); }
+  .lib-backup { display: block; }
+  .lib-backup-body { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+  .lib-current { font-size: .8rem; color: var(--text-muted); }
   .scan-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
   .scan-chart { position: relative; width: 100%; min-height: 150px; touch-action: pan-y; }
   .scan-chart svg { display: block; }
@@ -437,6 +462,7 @@
         <button class="tab-btn" id="tabSetupBtn" role="tab">세팅</button>
         <button class="tab-btn" id="tabPhotoBtn" role="tab">사진 인식</button>
         <button class="tab-btn" id="tabGameBtn" role="tab">대국</button>
+        <button class="tab-btn" id="tabLibraryBtn" role="tab">기보함</button>
       </div>
 
       <div id="panelReplay" class="panel-card">
@@ -445,8 +471,10 @@
           <textarea id="movetextInput" placeholder="1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 ..."></textarea>
           <div style="display:flex; gap:8px; align-items:center;">
             <button class="btn primary" id="playBtn">기보 재생</button>
+            <button class="btn" id="saveToLibBtn">기보함에 저장</button>
             <span class="hint">붙여넣으면 바로 재생 · Ctrl+Enter</span>
           </div>
+          <div id="libCurrentNote" class="lib-current" style="display:none;"></div>
           <div class="hint">대충 쳐도 됩니다: <code>e4 e5 nf3 nc6</code>, <code>1.e4e5 2.Nf3</code>, <code>0-0</code>, <code>e2-e4</code>, <code>♘f3</code>, <code>나이트f3</code>, 한글 자판 상태로 친 <code>ㄷ4</code>도 읽습니다. 책 사진은 휴대폰 기본 기능(아이폰 '텍스트 인식', 갤럭시 '텍스트 추출'·구글 렌즈)으로 글자를 복사해 붙여넣어도 됩니다.</div>
           <div id="parseError" class="error-banner"></div>
           <div id="parseSkipped" class="hint" style="display:none;"></div>
@@ -640,6 +668,49 @@
           </div>
           <div class="hint">대국 중에는 엔진 분석과 수순 넘기기가 잠깁니다. 무르기는 내 마지막 수 직전으로 되돌립니다.</div>
         </div>
+      </div>
+
+      <div id="panelLibrary" class="panel-card" style="display:none;">
+        <div class="lib-card">
+          <strong>지금 기보 저장</strong>
+          <div class="lib-fields">
+            <div class="field-group">
+              <label class="field-label" for="libTitle">제목</label>
+              <input id="libTitle" class="lib-input" type="text" maxlength="80" placeholder="예: 예제 12 (비우면 첫 수로 정함)">
+            </div>
+            <div class="field-group">
+              <label class="field-label" for="libGroup">분류 (책 이름·장)</label>
+              <input id="libGroup" class="lib-input" type="text" maxlength="60" list="libGroups" placeholder="예: 체스 전략 3장">
+              <datalist id="libGroups"></datalist>
+            </div>
+          </div>
+          <label class="tier-toggle" id="libUseViewWrap" style="display:none;"><input type="checkbox" id="libUseView"> 직접 둔 수까지 포함한 지금 수순으로 저장 (변화수·주석은 빠짐)</label>
+          <div class="game-buttons">
+            <button class="btn small primary" id="libSaveBtn">저장</button>
+            <button class="btn small" id="libSaveNewBtn" style="display:none;">새로 저장</button>
+            <button class="btn small" id="libCloseBtn" style="display:none;">새 기보 쓰기</button>
+          </div>
+          <div id="libNote" class="lib-note"></div>
+        </div>
+
+        <div class="field-group">
+          <div class="lib-tools">
+            <span class="field-label">저장한 기보 <span id="libCount"></span></span>
+            <input id="libSearch" class="lib-input" type="search" placeholder="제목·분류·수 찾기">
+          </div>
+          <div id="libList"></div>
+        </div>
+
+        <details class="lib-card lib-backup">
+          <summary class="field-label" style="cursor:pointer;">백업 · 다른 기기로 옮기기</summary>
+          <div class="lib-backup-body">
+          <div class="hint">저장한 기보는 이 기기의 이 브라우저에만 남습니다 (claude.ai와 휴대폰 앱도 따로 저장됩니다). 백업 글을 복사해 두거나 다른 쪽에 붙여넣으면 옮길 수 있습니다.</div>
+          <div class="game-buttons"><button class="btn small" id="libExportBtn">백업 글 복사</button></div>
+          <textarea id="libImportText" class="lib-input" placeholder="복사한 백업 글을 여기에 붙여넣기"></textarea>
+          <div class="game-buttons"><button class="btn small" id="libImportBtn">가져오기</button></div>
+          <div id="libImportNote" class="lib-note"></div>
+          </div>
+        </details>
       </div>
     </section>
   </div>
@@ -1354,7 +1425,7 @@
     selectedSquare: null, legalTargets: [],
     selectedPalette: null,
     pendingPromotion: null,
-    parseError: null, parseSkipped: [], parseVarBroken: 0, chipRefs: [],
+    parseError: null, parseSkipped: [], parseVarBroken: 0, chipRefs: [], bookText: "",
     drag: null
   };
   App.viewPositions = [clone(App.rootState)];
@@ -1372,6 +1443,7 @@
     App.parseError = null;
     App.parseSkipped = [];
     App.parseVarBroken = 0;
+    App.bookText = "";
     App.selectedSquare = null;
     App.legalTargets = [];
     Game.active = false; Game.moving = false; Game.result = null;
@@ -1478,16 +1550,37 @@
   var quizStopBtn = document.getElementById("quizStopBtn");
   var quizFeedbackEl = document.getElementById("quizFeedback");
   var quizHintEl = document.getElementById("quizHint");
+  var tabLibraryBtn = document.getElementById("tabLibraryBtn");
+  var panelLibrary = document.getElementById("panelLibrary");
+  var saveToLibBtn = document.getElementById("saveToLibBtn");
+  var libCurrentNoteEl = document.getElementById("libCurrentNote");
+  var libTitleEl = document.getElementById("libTitle");
+  var libGroupEl = document.getElementById("libGroup");
+  var libGroupsEl = document.getElementById("libGroups");
+  var libUseViewWrap = document.getElementById("libUseViewWrap");
+  var libUseViewEl = document.getElementById("libUseView");
+  var libSaveBtn = document.getElementById("libSaveBtn");
+  var libSaveNewBtn = document.getElementById("libSaveNewBtn");
+  var libCloseBtn = document.getElementById("libCloseBtn");
+  var libNoteEl = document.getElementById("libNote");
+  var libCountEl = document.getElementById("libCount");
+  var libSearchEl = document.getElementById("libSearch");
+  var libListEl = document.getElementById("libList");
+  var libExportBtn = document.getElementById("libExportBtn");
+  var libImportText = document.getElementById("libImportText");
+  var libImportBtn = document.getElementById("libImportBtn");
+  var libImportNoteEl = document.getElementById("libImportNote");
 
   // ---------- tabs ----------
   function setTab(name) {
     App.mode = name === "setup" ? "setup" : "replay";
-    [["replay", tabReplayBtn, panelReplay], ["setup", tabSetupBtn, panelSetup], ["photo", tabPhotoBtn, panelPhoto], ["game", tabGameBtn, panelGame]].forEach(function (t) {
+    [["replay", tabReplayBtn, panelReplay], ["setup", tabSetupBtn, panelSetup], ["photo", tabPhotoBtn, panelPhoto], ["game", tabGameBtn, panelGame], ["library", tabLibraryBtn, panelLibrary]].forEach(function (t) {
       t[1].classList.toggle("active", t[0] === name);
       t[2].style.display = t[0] === name ? "flex" : "none";
     });
     App.selectedSquare = null; App.legalTargets = [];
     if (name !== "setup") App.selectedPalette = null;
+    if (name === "library") Library.note = null;
     render();
   }
 
@@ -1974,6 +2067,8 @@
     renderGamePanel();
     renderQuizPanel();
     renderScanPanel();
+    rememberLibraryPly();
+    renderLibrary();
   }
 
   // ---------- clipboard ----------
@@ -2014,6 +2109,224 @@
       turn = turn === "w" ? "b" : "w";
     });
     return parts.join(" ");
+  }
+
+  // ---------- saved games (기보함) ----------
+  // Kept in this browser's localStorage, so claude.ai and the phone app each have their own list;
+  // the backup text moves games between them.
+  var LIBRARY_KEY = "chess-book-viewer:library";
+  var NO_GROUP = "분류 없음";
+  var Library = { items: [], current: null, storageOk: true, note: null, confirmId: null, confirmTimer: null, closed: {} };
+
+  function validEntry(e) {
+    return e && typeof e.id === "string" && typeof e.text === "string" && typeof e.fen === "string";
+  }
+  function loadLibrary() {
+    try {
+      var raw = JSON.parse(localStorage.getItem(LIBRARY_KEY) || "[]");
+      Library.items = Array.isArray(raw) ? raw.filter(validEntry) : [];
+    } catch (e) { Library.items = []; Library.storageOk = false; }
+  }
+  function storeLibrary() {
+    try { localStorage.setItem(LIBRARY_KEY, JSON.stringify(Library.items)); Library.storageOk = true; }
+    catch (e) { Library.storageOk = false; }
+    return Library.storageOk;
+  }
+  function libraryEntry(id) {
+    for (var i = 0; i < Library.items.length; i++) if (Library.items[i].id === id) return Library.items[i];
+    return null;
+  }
+  function newLibraryId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+  function countPlies(fen, text) {
+    try { return parseMovetext(parseFEN(fen), text).moves.length; } catch (e) { return 0; }
+  }
+  function defaultTitle(text) {
+    var t = text.replace(/\s+/g, " ").trim();
+    if (!t) return "국면 " + new Date().toLocaleDateString("ko-KR");
+    return t.length > 28 ? t.slice(0, 28) + "…" : t;
+  }
+  // Played or hand-entered moves are only in the move list, so saving them writes that line out as text.
+  function canSaveView() { return App.divergeAt !== null && App.viewMoves.length > 0; }
+
+  function saveToLibrary(asNew) {
+    if (Quiz.active) { Library.note = { cls: "error", text: "맞히기를 끝낸 뒤 저장하세요." }; render(); return; }
+    var useView = libUseViewEl.checked && canSaveView();
+    var text = useView ? buildMovetext() : App.bookText;
+    var fen = toFEN(App.rootState);
+    if (!text && fen === STANDARD_FEN) {
+      Library.note = { cls: "error", text: "저장할 기보가 없습니다. 재생 탭에서 기보를 입력하고 재생하세요." };
+      render(); return;
+    }
+    var entry = !asNew && Library.current ? libraryEntry(Library.current) : null;
+    if (!entry) {
+      entry = { id: newLibraryId() };
+      Library.items.push(entry);
+    }
+    entry.title = libTitleEl.value.trim() || defaultTitle(text);
+    entry.group = libGroupEl.value.trim();
+    entry.fen = fen;
+    entry.text = text;
+    entry.plies = countPlies(fen, text);
+    entry.ply = useView ? Math.min(App.currentPly, entry.plies) : (App.divergeAt === null ? App.currentPly : App.divergeAt);
+    entry.saved = Date.now();
+    Library.current = entry.id;
+    libTitleEl.value = entry.title;
+    libUseViewEl.checked = false;
+    Library.note = storeLibrary()
+      ? { cls: "ok", text: "‘" + entry.title + "’을(를) 저장했습니다." }
+      : { cls: "error", text: "이 브라우저에서는 저장 공간을 쓸 수 없습니다. 백업 글을 복사해 두세요." };
+    render();
+  }
+
+  function openFromLibrary(id) {
+    var e = libraryEntry(id);
+    if (!e) return;
+    var root;
+    try { root = parseFEN(e.fen); } catch (err) {
+      Library.note = { cls: "error", text: "‘" + e.title + "’의 시작 국면을 읽을 수 없습니다." }; render(); return;
+    }
+    App.rootState = root;
+    resetDerivedFromRoot();
+    movetextInput.value = e.text;
+    libTitleEl.value = e.title;
+    libGroupEl.value = e.group || "";
+    libUseViewEl.checked = false;
+    Library.note = null;
+    Library.current = null;  // so replaying doesn't record ply 0 as the place it was left
+    playBtn.click();
+    Library.current = e.id;
+    if (!App.parseError) App.currentPly = Math.max(0, Math.min(e.ply || 0, App.bookMoves.length));
+    setTab("replay");
+  }
+
+  function deleteFromLibrary(id) {
+    Library.items = Library.items.filter(function (e) { return e.id !== id; });
+    if (Library.current === id) Library.current = null;
+    Library.confirmId = null;
+    storeLibrary();
+    render();
+  }
+
+  function closeLibraryEntry() {
+    Library.current = null;
+    libTitleEl.value = ""; libGroupEl.value = "";
+    Library.note = null;
+    render();
+  }
+
+  // Reopening a saved game returns to where it was last viewed.
+  function rememberLibraryPly() {
+    var e = Library.current && libraryEntry(Library.current);
+    if (!e || App.mode !== "replay" || App.divergeAt !== null || Game.active || Quiz.active || App.parseError) return;
+    if (e.text !== App.bookText || e.fen !== toFEN(App.rootState) || e.ply === App.currentPly) return;
+    e.ply = App.currentPly;
+    storeLibrary();
+  }
+
+  function sortKey(a, b) { return a.localeCompare(b, "ko", { numeric: true, sensitivity: "base" }); }
+
+  function libraryGroups(items) {
+    var map = {};
+    items.forEach(function (e) {
+      var g = e.group || NO_GROUP;
+      (map[g] = map[g] || []).push(e);
+    });
+    return Object.keys(map).sort(function (a, b) {
+      if (a === NO_GROUP) return 1;
+      if (b === NO_GROUP) return -1;
+      return sortKey(a, b);
+    }).map(function (g) {
+      return { name: g, items: map[g].sort(function (a, b) { return sortKey(a.title || "", b.title || ""); }) };
+    });
+  }
+
+  function libraryMeta(e) {
+    var parts = [e.plies ? Math.ceil(e.plies / 2) + "수" : "수순 없음"];
+    if (e.fen !== STANDARD_FEN) parts.push("세팅한 국면부터");
+    if (e.ply && e.plies && e.ply < e.plies) parts.push(e.ply + "/" + e.plies + "에서 멈춤");
+    if (e.saved) {
+      var d = new Date(e.saved);
+      parts.push((d.getMonth() + 1) + "월 " + d.getDate() + "일");
+    }
+    return parts.join(" · ");
+  }
+
+  function renderLibrary() {
+    var cur = Library.current && libraryEntry(Library.current);
+    if (Library.current && !cur) Library.current = null;
+    libCurrentNoteEl.style.display = cur ? "" : "none";
+    if (cur) libCurrentNoteEl.textContent = "기보함에서 연 기보: " + cur.title + (cur.group ? " (" + cur.group + ")" : "");
+
+    if (panelLibrary.style.display === "none") return;
+    libUseViewWrap.style.display = canSaveView() ? "" : "none";
+    libSaveBtn.textContent = cur ? "‘" + (cur.title.length > 16 ? cur.title.slice(0, 16) + "…" : cur.title) + "’에 덮어쓰기" : "저장";
+    libSaveNewBtn.style.display = cur ? "" : "none";
+    libCloseBtn.style.display = cur ? "" : "none";
+    var note = Library.note || (!Library.storageOk ? { cls: "error", text: "이 브라우저에서는 저장 공간을 쓸 수 없어 새로고침하면 사라집니다." } : null);
+    libNoteEl.className = "lib-note" + (note ? " " + note.cls : "");
+    libNoteEl.textContent = note ? note.text : "";
+
+    var groups = libraryGroups(Library.items);
+    libGroupsEl.innerHTML = groups.filter(function (g) { return g.name !== NO_GROUP; })
+      .map(function (g) { return '<option value="' + escapeHtml(g.name) + '">'; }).join("");
+    libCountEl.textContent = Library.items.length ? "(" + Library.items.length + ")" : "";
+
+    var q = libSearchEl.value.trim().toLowerCase();
+    var html = "";
+    groups.forEach(function (g) {
+      var items = q ? g.items.filter(function (e) {
+        return (e.title + " " + (e.group || "") + " " + e.text).toLowerCase().indexOf(q) !== -1;
+      }) : g.items;
+      if (!items.length) return;
+      html += '<details class="lib-group" data-group="' + escapeHtml(g.name) + '"' + (Library.closed[g.name] && !q ? "" : " open") + ">" +
+              "<summary>" + escapeHtml(g.name) + ' <span class="lib-meta">' + items.length + "개</span></summary>" +
+              '<ul class="lib-list">' + items.map(function (e) {
+                var confirm = Library.confirmId === e.id;
+                return '<li class="lib-row' + (e.id === Library.current ? " current" : "") + '" data-id="' + escapeHtml(e.id) + '">' +
+                       '<button class="lib-open" data-act="open"><span class="lib-title">' + escapeHtml(e.title || "제목 없음") + "</span>" +
+                       '<span class="lib-meta">' + escapeHtml(libraryMeta(e)) + "</span></button>" +
+                       '<button class="btn small' + (confirm ? " confirm" : "") + '" data-act="delete">' + (confirm ? "정말 삭제" : "삭제") + "</button></li>";
+              }).join("") + "</ul></details>";
+    });
+    if (!html) {
+      html = '<span class="muted">' + (Library.items.length ? "찾는 기보가 없습니다." :
+             "아직 저장한 기보가 없습니다. 재생 탭에서 기보를 재생한 뒤 위에서 저장하세요.") + "</span>";
+    }
+    libListEl.innerHTML = html;
+  }
+
+  function exportLibrary() {
+    copyToClipboard(JSON.stringify({ app: "chess-book-viewer", version: 1, items: Library.items }), libExportBtn);
+  }
+
+  function importLibrary() {
+    var data;
+    try { data = JSON.parse(libImportText.value.trim()); } catch (e) { data = null; }
+    var items = data && Array.isArray(data.items) ? data.items.filter(validEntry) : null;
+    if (!items) {
+      libImportNoteEl.className = "lib-note error";
+      libImportNoteEl.textContent = "백업 글을 읽을 수 없습니다. ‘백업 글 복사’로 복사한 글 전체를 붙여넣으세요.";
+      return;
+    }
+    var added = 0, updated = 0;
+    items.forEach(function (it) {
+      var e = {
+        id: it.id, title: String(it.title || "").slice(0, 80) || defaultTitle(it.text), group: String(it.group || "").slice(0, 60),
+        fen: it.fen, text: it.text, plies: Number(it.plies) || countPlies(it.fen, it.text),
+        ply: Number(it.ply) || 0, saved: Number(it.saved) || Date.now()
+      };
+      var have = libraryEntry(e.id);
+      if (!have) { Library.items.push(e); added++; }
+      else if (e.saved > (have.saved || 0)) { Library.items[Library.items.indexOf(have)] = e; updated++; }
+    });
+    storeLibrary();
+    libImportText.value = "";
+    var kept = items.length - added - updated;
+    libImportNoteEl.className = "lib-note ok";
+    libImportNoteEl.textContent = "새로 " + added + "개, 더 최신으로 바꾼 것 " + updated + "개를 가져왔습니다." +
+      (kept ? " 이미 있던 " + kept + "개는 그대로 두었습니다." : "");
+    render();
   }
 
   // ---------- engine analysis (Stockfish 10, pure-JS build so no separate .wasm file is needed) ----------
@@ -3145,6 +3458,36 @@
     } catch (e) {}
     quizStartBtn.onclick = startQuiz;
 
+    loadLibrary();
+    tabLibraryBtn.onclick = function () { setTab("library"); };
+    saveToLibBtn.onclick = function () { setTab("library"); libTitleEl.focus(); };
+    libSaveBtn.onclick = function () { saveToLibrary(false); };
+    libSaveNewBtn.onclick = function () { saveToLibrary(true); };
+    libCloseBtn.onclick = closeLibraryEntry;
+    libSearchEl.addEventListener("input", renderLibrary);
+    [libTitleEl, libGroupEl].forEach(function (el) {
+      el.addEventListener("keydown", function (e) { if (e.key === "Enter") saveToLibrary(false); });
+    });
+    libListEl.addEventListener("click", function (e) {
+      var btn = e.target.closest("[data-act]");
+      var row = btn && btn.closest(".lib-row");
+      if (!row) return;
+      var id = row.dataset.id;
+      if (btn.dataset.act === "open") { openFromLibrary(id); return; }
+      // Two taps to delete, so a slip of the finger doesn't lose a game.
+      if (Library.confirmId === id) { deleteFromLibrary(id); return; }
+      Library.confirmId = id;
+      clearTimeout(Library.confirmTimer);
+      Library.confirmTimer = setTimeout(function () { Library.confirmId = null; renderLibrary(); }, 3000);
+      renderLibrary();
+    });
+    libListEl.addEventListener("toggle", function (e) {
+      var g = e.target.dataset && e.target.dataset.group;
+      if (g != null && !libSearchEl.value.trim()) Library.closed[g] = !e.target.open;
+    }, true);
+    libExportBtn.onclick = exportLibrary;
+    libImportBtn.onclick = importLibrary;
+
     scanBtn.onclick = startScan;
     scanStopBtn.onclick = stopScan;
     scanListEl.addEventListener("click", function (e) {
@@ -3162,6 +3505,7 @@
     playBtn.onclick = function () {
       var result = parseMovetext(App.rootState, movetextInput.value);
       try { localStorage.setItem(MOVETEXT_KEY, movetextInput.value); } catch (e) {}
+      App.bookText = movetextInput.value.trim();
       App.bookPositions = result.positions;
       App.bookMoves = result.moves;
       App.viewPositions = result.positions.slice();
