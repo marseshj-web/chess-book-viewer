@@ -327,6 +327,34 @@
   .quiz-feedback { font-size: .9rem; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); }
   .quiz-feedback.correct, .quiz-feedback.done { background: var(--accent-soft); color: var(--text); font-weight: 600; }
   .quiz-feedback.wrong { background: color-mix(in srgb, var(--danger) 14%, var(--surface-2)); color: var(--danger); }
+  .scan-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .scan-chart { position: relative; width: 100%; min-height: 150px; touch-action: pan-y; }
+  .scan-chart svg { display: block; }
+  .scan-grid { stroke: var(--border); stroke-width: 1; }
+  .scan-axis { fill: var(--text-muted); font-size: 10px; font-family: var(--font-ui); }
+  .scan-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .scan-area { fill: var(--accent); opacity: .12; }
+  .scan-cursor, .scan-hover { stroke: var(--text-muted); stroke-width: 1; }
+  .scan-now { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+  .scan-dot { stroke: var(--surface); stroke-width: 2; }
+  .scan-hit { fill: transparent; cursor: pointer; }
+  .scan-dot.inaccuracy, .scan-key.inaccuracy { fill: #fab219; background: #fab219; }
+  .scan-dot.mistake, .scan-key.mistake { fill: #ec835a; background: #ec835a; }
+  .scan-dot.blunder, .scan-key.blunder { fill: #d03b3b; background: #d03b3b; }
+  .scan-key { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+  .scan-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: .78rem; color: var(--text-muted); }
+  .scan-tip { position: absolute; top: 0; pointer-events: none; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-size: .78rem; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,.15); display: flex; flex-direction: column; }
+  .scan-tip strong { font-family: var(--font-mono); font-size: .9rem; color: var(--text); }
+  .scan-tip span { color: var(--text-muted); }
+  .scan-summary { font-size: .85rem; white-space: pre-line; }
+  .scan-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .scan-row { border: none; background: none; color: var(--text); font-family: var(--font-mono); font-size: .82rem; text-align: left; cursor: pointer; padding: 3px 4px; border-radius: 4px; width: 100%; }
+  .scan-row:hover { background: var(--accent-soft); }
+  .move-chip.marked { box-shadow: inset 0 -2px 0 var(--mark-color); }
+  .move-chip.inaccuracy { --mark-color: #fab219; }
+  .move-chip.mistake { --mark-color: #ec835a; }
+  .move-chip.blunder { --mark-color: #d03b3b; }
+  .chip-glyph { font-weight: 700; margin-left: 1px; }
   .game-result { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 8px; background: var(--accent-soft); }
   .analysis { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
   .analysis-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
@@ -456,10 +484,28 @@
             <label class="field-label">수순</label>
             <div style="display:flex; gap:8px; align-items:center;">
               <span class="diverge-note" id="divergeNote"><span id="divergeText">책 수순에서 벗어남</span> <button class="btn small" id="backToBookBtn">책 수순으로 복귀</button></span>
+              <button class="btn small" id="scanBtn">판 전체 분석</button>
               <button class="btn small" id="copyPgnBtn">기보 복사</button>
             </div>
           </div>
           <div id="moveList" class="move-list"><span class="muted">기보를 입력하고 재생 버튼을 누르세요.</span></div>
+        </div>
+
+        <div id="scanCard" class="scan-card" style="display:none;">
+          <div class="quiz-head">
+            <strong>판 전체 분석</strong>
+            <span class="analysis-info" id="scanInfo"></span>
+          </div>
+          <div id="scanChart" class="scan-chart"></div>
+          <div class="scan-legend">
+            <span><span class="scan-key inaccuracy"></span>?! 부정확</span>
+            <span><span class="scan-key mistake"></span>? 실수</span>
+            <span><span class="scan-key blunder"></span>?? 큰 실수</span>
+          </div>
+          <div id="scanSummary" class="scan-summary"></div>
+          <ul id="scanList" class="scan-list"></ul>
+          <div class="game-buttons"><button class="btn small" id="scanStopBtn">중지</button></div>
+          <div class="hint">그래프는 수마다 백이 이길 가능성(위쪽일수록 백 유리)을 보여줍니다. 그래프나 목록을 누르면 그 국면으로 이동합니다. 지금 보드에 보이는 수순(본 수순, 변화수, 직접 둔 수 포함)을 분석합니다.</div>
         </div>
       </div>
 
@@ -1330,6 +1376,7 @@
     App.legalTargets = [];
     Game.active = false; Game.moving = false; Game.result = null;
     resetQuiz();
+    clearScan();
   }
 
   function visualToSquare(row, col, flipped) {
@@ -1356,6 +1403,13 @@
   var backToBookBtn = document.getElementById("backToBookBtn");
   var divergeNoteEl = document.getElementById("divergeNote");
   var divergeTextEl = document.getElementById("divergeText");
+  var scanBtn = document.getElementById("scanBtn");
+  var scanCardEl = document.getElementById("scanCard");
+  var scanInfoEl = document.getElementById("scanInfo");
+  var scanChartEl = document.getElementById("scanChart");
+  var scanSummaryEl = document.getElementById("scanSummary");
+  var scanListEl = document.getElementById("scanList");
+  var scanStopBtn = document.getElementById("scanStopBtn");
   var tabReplayBtn = document.getElementById("tabReplayBtn");
   var tabSetupBtn = document.getElementById("tabSetupBtn");
   var panelReplay = document.getElementById("panelReplay");
@@ -1782,7 +1836,15 @@
     var classes = ["move-chip"];
     if (App.currentPly === ply) classes.push("current");
     if (App.divergeAt !== null && idx >= App.divergeAt) classes.push("diverged");
-    return '<button type="button" class="' + classes.join(" ") + '" data-ply="' + ply + '">' + escapeHtml(moveObj.san) + "</button>";
+    var mark = Quiz.active ? null : scanMarkFor(pathKey(App.viewMoves.slice(0, ply)));
+    if (mark) classes.push("marked", mark.cls);
+    return '<button type="button" class="' + classes.join(" ") + '" data-ply="' + ply + '">' + escapeHtml(moveObj.san) +
+           (mark ? '<span class="chip-glyph">' + mark.glyph + "</span>" : "") + "</button>";
+  }
+
+  // Whole-game scan mark for the move that ends the path `key`, hidden during a game or quiz.
+  function scanMarkFor(key) {
+    return Game.active || Quiz.active ? null : Scan.marks[key] || null;
   }
 
   // Move number label for the move played from ply index `ply`.
@@ -1831,8 +1893,9 @@
       else if (needNum) out += '<span class="move-num">' + n.no + "...</span>";
       needNum = false;
       refs.push({ line: line, idx: i });
-      out += '<button type="button" class="move-chip' + (key.trim() === viewKey ? " current" : "") +
-             '" data-ref="' + (refs.length - 1) + '">' + escapeHtml(e.san) + "</button>";
+      var mark = scanMarkFor(key.trim());
+      out += '<button type="button" class="move-chip' + (key.trim() === viewKey ? " current" : "") + (mark ? " marked " + mark.cls : "") +
+             '" data-ref="' + (refs.length - 1) + '">' + escapeHtml(e.san) + (mark ? '<span class="chip-glyph">' + mark.glyph + "</span>" : "") + "</button>";
       e.vars.forEach(function (v) {
         var inner = treeLineHtml(v, depth + 1, refs, viewKey);
         out += depth === 0 ? '<span class="variation">' + inner + "</span>" : '<span class="variation nested">(' + inner + ")</span>";
@@ -1910,6 +1973,7 @@
     renderAnalysis();
     renderGamePanel();
     renderQuizPanel();
+    renderScanPanel();
   }
 
   // ---------- clipboard ----------
@@ -1982,6 +2046,19 @@
     active: false, result: null,
     myColor: "w", engineColor: "b", level: 4, startPly: 0,
     moving: false, thinkingSince: 0
+  };
+
+  // ---------- whole-game scan ----------
+  // Every position of the shown line gets a fixed-depth evaluation; a move is marked by how much it
+  // lowers the mover's winning chance (Lichess's thresholds: 5 / 10 / 15 points on a 0–100 scale).
+  var SCAN_DEPTH = 12, SCAN_DEPTH_SLOW = 8;
+  var SCAN_MARKS = [
+    { min: 15, glyph: "??", cls: "blunder", name: "큰 실수" },
+    { min: 10, glyph: "?", cls: "mistake", name: "실수" },
+    { min: 5, glyph: "?!", cls: "inaccuracy", name: "부정확" }
+  ];
+  var Scan = {
+    running: false, moves: null, positions: null, evals: [], keys: [], marks: {}, last: null, hover: -1
   };
 
   // ---------- guess the next book move ----------
@@ -2107,6 +2184,14 @@
       var c = Quiz.compare;
       return c && !c.done ? compareJob(c) : null;
     }
+    if (Scan.running) {
+      var next = Scan.evals.indexOf(undefined);
+      if (next !== -1) {
+        var sj = makeJob("scan", toFEN(Scan.positions[next]), ["#" + next]);
+        sj.idx = next;
+        return sj;
+      }
+    }
     if (!Engine.on || Engine.note || !Engine.fen) return null;
     var job = makeJob("analysis", Engine.fen);
     return sameJob(job, Engine.finished) ? null : job;
@@ -2126,6 +2211,7 @@
       var lv = GAME_LEVELS[Game.level];
       Engine.send("setoption name MultiPV value 1");
       Engine.send("setoption name Skill Level value " + lv.skill);
+      Engine.send("setoption name Contempt value 24");
       Engine.send("position fen " + job.fen);
       Engine.send("go depth " + lv.depth + " movetime 3000");
       Game.thinkingSince = Date.now();
@@ -2133,11 +2219,21 @@
       // searchmoves limits the search to the two moves, so one search scores both.
       Engine.send("setoption name MultiPV value 2");
       Engine.send("setoption name Skill Level value 20");
+      // Stockfish 10's default Contempt tilts scores toward the side to move; analysis needs it neutral.
+      Engine.send("setoption name Contempt value 0");
       Engine.send("position fen " + job.fen);
       Engine.send("go depth " + Math.min(14, Engine.depthLimit) + " searchmoves " + job.moves.join(" "));
+    } else if (job.kind === "scan") {
+      Scan.last = null;
+      Engine.send("setoption name MultiPV value 1");
+      Engine.send("setoption name Skill Level value 20");
+      Engine.send("setoption name Contempt value 0");
+      Engine.send("position fen " + job.fen);
+      Engine.send("go depth " + (Engine.depthLimit < 18 ? SCAN_DEPTH_SLOW : SCAN_DEPTH) + " movetime 2500");
     } else {
       Engine.send("setoption name MultiPV value " + ENGINE_LINES);
       Engine.send("setoption name Skill Level value 20");
+      Engine.send("setoption name Contempt value 0");
       Engine.send("position fen " + job.fen);
       Engine.send("go depth " + Engine.depthLimit);
     }
@@ -2166,6 +2262,7 @@
       if (done && !stopped) {
         if (done.kind === "analysis") Engine.finished = done;
         else if (done.kind === "compare") { if (Quiz.compare && compareJob(Quiz.compare).key === done.key) Quiz.compare.done = true; }
+        else if (done.kind === "scan") recordScan(done, line.split(/\s+/)[1]);
         else playEngineMove(done, line.split(/\s+/)[1]);
       }
       pump();
@@ -2181,6 +2278,7 @@
     var mpv = Number((line.match(/ multipv (\d+)/) || [0, 1])[1]);
     var pv = line.slice(line.indexOf(" pv ") + 4).trim().split(/\s+/);
     if (job.kind === "compare") { recordCompare(job, pv[0], sc, depth); return; }
+    if (job.kind === "scan") { Scan.last = { sc: sc, depth: depth }; return; }
     if (job.kind !== "analysis" || job.fen !== Engine.fen) return;
     // UCI scores are from the side to move; the panel always shows White's point of view.
     var sign = Engine.state.turn === "w" ? 1 : -1;
@@ -2263,7 +2361,7 @@
   function queueAnalysisRender() {
     if (Engine.renderQueued) return;
     Engine.renderQueued = true;
-    requestAnimationFrame(function () { Engine.renderQueued = false; renderAnalysis(); renderGamePanel(); renderQuizPanel(); });
+    requestAnimationFrame(function () { Engine.renderQueued = false; renderAnalysis(); renderGamePanel(); renderQuizPanel(); renderScanPanel(); });
   }
 
   function renderAnalysis() {
@@ -2284,6 +2382,7 @@
     if (Engine.on && !Engine.note) {
       if (Engine.status === "loading" || Engine.status === "idle") info = "엔진 불러오는 중…";
       else if (Engine.status === "failed") info = "엔진을 불러오지 못했습니다";
+      else if (Scan.running) info = "판 전체 분석이 끝나면 계산합니다";
       else if (Engine.depth) info = "깊이 " + Engine.depth + (Engine.searching ? " · 계산 중" : " · 완료");
       else info = "계산 중…";
     }
@@ -2326,6 +2425,7 @@
     var level = Number(gameLevelSel.value);
     gameErrorEl.textContent = "";
     stopQuiz(false);
+    Scan.running = false;
     if (selectedRadio("gameStart") === "initial") {
       App.rootState = parseFEN(STANDARD_FEN);
       resetDerivedFromRoot();
@@ -2456,6 +2556,7 @@
       return;
     }
     resetQuiz();
+    Scan.running = false;
     Quiz.side = selectedRadio("quizSide");
     try { localStorage.setItem(QUIZ_KEY, Quiz.side); } catch (e) {}
     Quiz.active = true; Quiz.correct = 0; Quiz.total = 0; Quiz.tries = 0;
@@ -2553,6 +2654,204 @@
       : "큰 실수입니다.";
     return "엔진 평가 (백 기준" + (c.done ? "" : ", 계산 중") + "): 내 수 " + c.user.san + " " + formatScore(u) +
            " · 책의 수 " + formatScore(b) + " — " + verdict;
+  }
+
+  // ---------- whole-game scan flow ----------
+  function startScan() {
+    if (Game.active || Quiz.active || App.viewMoves.length === 0) return;
+    Scan.moves = App.viewMoves.slice();
+    Scan.positions = App.viewPositions.slice(0, Scan.moves.length + 1);
+    Scan.evals = Scan.positions.map(function (p) {
+      // Finished positions need no engine.
+      var st = positionStatus(p);
+      if (st === "checkmate") return { cp: null, mate: null, win: p.turn === "w" ? 0 : 100, label: "체크메이트" };
+      if (st === "stalemate") return { cp: 0, mate: null, win: 50, label: "스테일메이트" };
+      return undefined;
+    });
+    Scan.keys = Scan.positions.map(function (p, i) { return pathKey(Scan.moves.slice(0, i)); });
+    Scan.marks = {};
+    Scan.running = true;
+    finishScanIfDone();
+    render();
+  }
+
+  function stopScan() {
+    if (!Scan.running) return;
+    Scan.running = false;
+    render();
+  }
+
+  function clearScan() {
+    Scan.running = false; Scan.moves = null; Scan.positions = null; Scan.evals = []; Scan.keys = []; Scan.marks = {};
+  }
+
+  function finishScanIfDone() {
+    if (Scan.running && Scan.evals.indexOf(undefined) === -1) Scan.running = false;
+  }
+
+  function recordScan(job, best) {
+    if (!Scan.positions || Scan.evals[job.idx] !== undefined || toFEN(Scan.positions[job.idx]) !== job.fen) return;
+    var p = Scan.positions[job.idx], sign = p.turn === "w" ? 1 : -1, sc = Scan.last && Scan.last.sc;
+    var ev = { cp: 0, mate: null };
+    if (sc) ev = { cp: sc[1] === "cp" ? sign * Number(sc[2]) : null, mate: sc[1] === "mate" ? sign * Number(sc[2]) : null };
+    ev.win = whiteShare(ev);
+    ev.best = best;
+    Scan.evals[job.idx] = ev;
+    markScanMove(job.idx - 1);
+    markScanMove(job.idx);
+    finishScanIfDone();
+    renderMoveList();
+  }
+
+  // Marks move i (from position i to i+1) once both evaluations are known.
+  function markScanMove(i) {
+    if (i < 0 || i >= Scan.moves.length) return;
+    var before = Scan.evals[i], after = Scan.evals[i + 1];
+    if (!before || !after) return;
+    var p = Scan.positions[i], mv = Scan.moves[i].move;
+    var loss = p.turn === "w" ? before.win - after.win : after.win - before.win;
+    var key = Scan.keys[i + 1];
+    delete Scan.marks[key];
+    if (before.best === moveToUci(mv)) return;
+    var mark = SCAN_MARKS.filter(function (m) { return loss >= m.min; })[0];
+    if (!mark) return;
+    var bestMove = before.best ? uciToMove(p, before.best) : null;
+    Scan.marks[key] = { glyph: mark.glyph, cls: mark.cls, name: mark.name, ply: i, loss: loss,
+                        bestSan: bestMove ? moveToSan(p, bestMove) : null };
+  }
+
+  function formatEval(ev) { return ev.label || formatScore(ev); }
+
+  function scanMoveLabel(i) {
+    var n = moveNumberAt(i);
+    var mark = Scan.marks[Scan.keys[i + 1]];
+    return n.no + (n.white ? ". " : "... ") + Scan.moves[i].san + (mark ? mark.glyph : "");
+  }
+
+  // Shows the scanned line on the board at ply `ply`.
+  function showScanPly(ply) {
+    if (Game.active || Quiz.active || !Scan.moves) return;
+    var moves = Scan.moves, d = 0;
+    while (d < moves.length && d < App.bookMoves.length && sameMove(moves[d].move, App.bookMoves[d].move)) d++;
+    if (d === moves.length) {
+      // The scanned line is the book's main line (or its start).
+      App.viewPositions = App.bookPositions.slice(); App.viewMoves = App.bookMoves.slice(); App.divergeAt = null;
+    } else {
+      App.viewPositions = Scan.positions.slice(); App.viewMoves = moves.slice(); App.divergeAt = d;
+    }
+    App.currentPly = ply;
+    App.selectedSquare = null; App.legalTargets = []; App.pendingPromotion = null;
+    render();
+  }
+
+  // Position index of the scanned line that the board shows, or -1.
+  function scanCurrentIndex() {
+    if (!Scan.moves || App.currentPly >= Scan.keys.length) return -1;
+    return pathKey(App.viewMoves.slice(0, App.currentPly)) === Scan.keys[App.currentPly] ? App.currentPly : -1;
+  }
+
+  function renderScanChart() {
+    var w = Math.max(240, Math.round(scanChartEl.clientWidth || 300)), h = 150;
+    var pad = { l: 34, r: 8, t: 10, b: 20 }, iw = w - pad.l - pad.r, ih = h - pad.t - pad.b;
+    var n = Scan.positions.length - 1;
+    function x(i) { return pad.l + (n ? i / n : 0) * iw; }
+    function y(win) { return pad.t + (100 - win) / 100 * ih; }
+    function f(v) { return v.toFixed(1); }
+    var pts = [];
+    for (var i = 0; i <= n && Scan.evals[i]; i++) pts.push([x(i), y(Scan.evals[i].win)]);
+    var svg = '<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + " " + h + '" role="img" aria-label="수마다 백의 승리 가능성 그래프">';
+    // Recessive frame: midline plus top/bottom hairlines, labelled at the left.
+    svg += '<line class="scan-grid" x1="' + pad.l + '" x2="' + (w - pad.r) + '" y1="' + f(y(50)) + '" y2="' + f(y(50)) + '"/>';
+    svg += '<line class="scan-grid" x1="' + pad.l + '" x2="' + (w - pad.r) + '" y1="' + pad.t + '" y2="' + pad.t + '"/>';
+    svg += '<line class="scan-grid" x1="' + pad.l + '" x2="' + (w - pad.r) + '" y1="' + (pad.t + ih) + '" y2="' + (pad.t + ih) + '"/>';
+    svg += '<text class="scan-axis" x="' + (pad.l - 6) + '" y="' + (pad.t + 4) + '" text-anchor="end">백</text>';
+    svg += '<text class="scan-axis" x="' + (pad.l - 6) + '" y="' + f(y(50) + 4) + '" text-anchor="end">균형</text>';
+    svg += '<text class="scan-axis" x="' + (pad.l - 6) + '" y="' + (pad.t + ih) + '" text-anchor="end">흑</text>';
+    // Move-number ticks, about every 60px.
+    var step = Math.max(2, Math.ceil(n / Math.max(1, Math.floor(iw / 60)) / 2) * 2);
+    for (var t = 0; t <= n; t += step) {
+      svg += '<text class="scan-axis" x="' + f(x(t)) + '" y="' + (h - 4) + '" text-anchor="middle">' + moveNumberAt(t).no + "</text>";
+    }
+    if (pts.length) {
+      var line = pts.map(function (p, k) { return (k ? "L" : "M") + f(p[0]) + " " + f(p[1]); }).join(" ");
+      svg += '<path class="scan-area" d="' + line + " L" + f(pts[pts.length - 1][0]) + " " + f(y(50)) + " L" + f(pts[0][0]) + " " + f(y(50)) + ' Z"/>';
+      svg += '<path class="scan-line" d="' + line + '"/>';
+    }
+    var cur = scanCurrentIndex();
+    if (cur !== -1) svg += '<line class="scan-cursor" x1="' + f(x(cur)) + '" x2="' + f(x(cur)) + '" y1="' + pad.t + '" y2="' + (pad.t + ih) + '"/>';
+    Object.keys(Scan.marks).forEach(function (k) {
+      var m = Scan.marks[k], ev = Scan.evals[m.ply + 1];
+      if (ev) svg += '<circle class="scan-dot ' + m.cls + '" cx="' + f(x(m.ply + 1)) + '" cy="' + f(y(ev.win)) + '" r="4.5"/>';
+    });
+    if (cur !== -1 && Scan.evals[cur]) svg += '<circle class="scan-now" cx="' + f(x(cur)) + '" cy="' + f(y(Scan.evals[cur].win)) + '" r="4"/>';
+    svg += '<line class="scan-hover" id="scanHoverLine" x1="0" x2="0" y1="' + pad.t + '" y2="' + (pad.t + ih) + '" style="display:none"/>';
+    svg += '<rect class="scan-hit" x="' + pad.l + '" y="0" width="' + iw + '" height="' + h + '"/></svg>';
+    scanChartEl.innerHTML = svg + '<div class="scan-tip" id="scanTip" style="display:none"><strong></strong><span></span></div>';
+    Scan.geom = { x: x, n: n, pad: pad, iw: iw, w: w };
+  }
+
+  function scanIndexAt(clientX) {
+    var g = Scan.geom, rect = scanChartEl.getBoundingClientRect();
+    if (!g || !g.n) return 0;
+    return Math.max(0, Math.min(g.n, Math.round((clientX - rect.left - g.pad.l) / g.iw * g.n)));
+  }
+
+  function showScanTip(i) {
+    var tip = document.getElementById("scanTip"), hl = document.getElementById("scanHoverLine");
+    if (!tip || !hl) return;
+    var ev = Scan.evals[i];
+    if (i < 0 || !ev) { tip.style.display = "none"; hl.style.display = "none"; return; }
+    var gx = Scan.geom.x(i);
+    hl.setAttribute("x1", gx); hl.setAttribute("x2", gx); hl.style.display = "";
+    tip.firstChild.textContent = formatEval(ev);
+    tip.lastChild.textContent = i === 0 ? "시작 국면" : scanMoveLabel(i - 1) + " 다음";
+    tip.style.display = "";
+    var left = Math.min(Math.max(0, gx - tip.offsetWidth / 2), Scan.geom.w - tip.offsetWidth);
+    tip.style.left = left + "px";
+  }
+
+  function renderScanPanel() {
+    var hidden = Game.active || Quiz.active;
+    scanBtn.disabled = hidden || App.viewMoves.length === 0 || Scan.running;
+    scanCardEl.style.display = !hidden && Scan.positions ? "" : "none";
+    if (hidden || !Scan.positions) return;
+    var done = Scan.evals.filter(function (e) { return e !== undefined; }).length;
+    var total = Scan.evals.length;
+    scanInfoEl.textContent = Scan.running ? "분석 중 " + done + " / " + total
+      : done < total ? "중지됨 · " + done + " / " + total + " 국면" : "완료 · 국면마다 깊이 " + (Engine.depthLimit < 18 ? SCAN_DEPTH_SLOW : SCAN_DEPTH);
+    scanStopBtn.style.display = Scan.running ? "" : "none";
+    renderScanChart();
+
+    var counts = { w: {}, b: {} }, rows = [];
+    Object.keys(Scan.marks).forEach(function (k) {
+      var m = Scan.marks[k];
+      var side = Scan.positions[m.ply].turn;
+      counts[side][m.cls] = (counts[side][m.cls] || 0) + 1;
+      if (m.cls !== "inaccuracy") rows.push(m);
+    });
+    function line(side) {
+      return (side === "w" ? "백" : "흑") + ": " + SCAN_MARKS.slice().reverse().map(function (m) {
+        return m.name + " " + (counts[side][m.cls] || 0);
+      }).join(" · ");
+    }
+    scanSummaryEl.textContent = line("w") + "\n" + line("b");
+    rows.sort(function (a, b) { return a.ply - b.ply; });
+    scanListEl.innerHTML = "";
+    rows.forEach(function (m) {
+      var li = document.createElement("li");
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "scan-row";
+      btn.dataset.ply = String(m.ply + 1);
+      var dot = document.createElement("span");
+      dot.className = "scan-key " + m.cls;
+      btn.appendChild(dot);
+      btn.appendChild(document.createTextNode(scanMoveLabel(m.ply) + "  " + formatEval(Scan.evals[m.ply]) + " → " +
+        formatEval(Scan.evals[m.ply + 1]) + (m.bestSan ? "  (최선: " + m.bestSan + ")" : "")));
+      li.appendChild(btn);
+      scanListEl.appendChild(li);
+    });
+    scanListEl.style.display = rows.length ? "" : "none";
   }
 
   function renderQuizPanel() {
@@ -2845,6 +3144,17 @@
       if (quizSide) quizSide.checked = true;
     } catch (e) {}
     quizStartBtn.onclick = startQuiz;
+
+    scanBtn.onclick = startScan;
+    scanStopBtn.onclick = stopScan;
+    scanListEl.addEventListener("click", function (e) {
+      var row = e.target.closest(".scan-row");
+      if (row) showScanPly(Number(row.dataset.ply));
+    });
+    scanChartEl.addEventListener("pointermove", function (e) { if (Scan.geom) showScanTip(scanIndexAt(e.clientX)); });
+    scanChartEl.addEventListener("pointerleave", function () { showScanTip(-1); });
+    scanChartEl.addEventListener("click", function (e) { if (Scan.geom) showScanPly(scanIndexAt(e.clientX)); });
+    new ResizeObserver(function () { if (scanCardEl.style.display !== "none" && Scan.positions) renderScanChart(); }).observe(scanChartEl);
     quizRevealBtn.onclick = quizReveal;
     quizStopBtn.onclick = function () { stopQuiz(false); render(); };
     initPhoto();
@@ -2865,6 +3175,7 @@
       App.selectedSquare = null; App.legalTargets = [];
       endGame(null);
       resetQuiz();
+      clearScan();
       render();
     };
     movetextInput.addEventListener("keydown", function (e) {

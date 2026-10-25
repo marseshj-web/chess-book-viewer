@@ -1,6 +1,6 @@
 // Offline support: serve the app shell from cache, refresh it in the background when online.
 // Bump CACHE when shipping changes so old caches are dropped.
-var CACHE = "chess-book-viewer-v5";
+var CACHE = "chess-book-viewer-v6";
 var SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icons/icon-192.png", "./icons/icon-512.png", "./icons/apple-touch-icon.png", "./icons/icon.svg", "./engine/stockfish.asm.js"];
 
 self.addEventListener("install", function (e) {
