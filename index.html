@@ -254,10 +254,14 @@
   }
 
   .move-list {
-    display: flex; flex-wrap: wrap; align-content: flex-start; gap: 3px 2px; max-height: 240px;
-    overflow-y: auto; font-family: var(--font-mono); font-size: .87rem; padding: 8px;
-    background: var(--surface-2); border-radius: 8px;
+    max-height: 320px; overflow-y: auto; font-family: var(--font-mono); font-size: .87rem; padding: 8px;
+    background: var(--surface-2); border-radius: 8px; line-height: 1.9;
   }
+  .move-list .variation { display: block; margin: 2px 0 4px 4px; padding-left: 8px; border-left: 2px solid var(--border); font-size: .92em; color: var(--text-muted); }
+  .move-list .variation.nested { display: inline; margin: 0; padding: 0; border: none; font-size: 1em; }
+  .move-list .variation .move-chip { color: var(--text-muted); }
+  .move-list .variation .move-chip.current { color: var(--accent-contrast); }
+  .manual-line { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border); }
   .move-pair { display: inline-flex; align-items: center; gap: 2px; margin-right: 4px; }
   .move-num { color: var(--text-muted); margin-right: 1px; font-variant-numeric: tabular-nums; }
   .move-chip { border: none; background: none; color: var(--text); cursor: pointer; padding: 2px 5px; border-radius: 4px; }
@@ -409,7 +413,7 @@
 
       <div id="panelReplay" class="panel-card">
         <div class="field-group" id="replayInput">
-          <label class="field-label" for="movetextInput">기보 입력 / 붙여넣기 (메인 라인만, 괄호 속 변화수는 무시)</label>
+          <label class="field-label" for="movetextInput">기보 입력 / 붙여넣기 (괄호 속 변화수도 읽습니다)</label>
           <textarea id="movetextInput" placeholder="1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 ..."></textarea>
           <div style="display:flex; gap:8px; align-items:center;">
             <button class="btn primary" id="playBtn">기보 재생</button>
@@ -451,7 +455,7 @@
           <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
             <label class="field-label">수순</label>
             <div style="display:flex; gap:8px; align-items:center;">
-              <span class="diverge-note" id="divergeNote">책 수순에서 벗어남 <button class="btn small" id="backToBookBtn">책 수순으로 복귀</button></span>
+              <span class="diverge-note" id="divergeNote"><span id="divergeText">책 수순에서 벗어남</span> <button class="btn small" id="backToBookBtn">책 수순으로 복귀</button></span>
               <button class="btn small" id="copyPgnBtn">기보 복사</button>
             </div>
           </div>
@@ -1084,8 +1088,6 @@
     var t = raw.replace(/\r/g, "");
     t = t.replace(/^[ \t]*\[[^\]]*\][ \t]*$/gm, " ");
     t = t.replace(/\{[^}]*\}/g, " ");
-    var prev;
-    do { prev = t; t = t.replace(/\([^()]*\)|\[[^\[\]]*\]/g, " "); } while (t !== prev);
     t = t.replace(/\$\d+/g, " ");
     t = t.replace(/[♔-♟]/g, function (c) { return FIGURINES[c]; });
     KO_PIECES.forEach(function (p) { t = t.split(p[0]).join(p[1]); });
@@ -1094,10 +1096,14 @@
     t = t.replace(/[0Oo]-[0Oo](-[0Oo])?/g, function (m, q) { return q ? " O-O-O " : " O-O "; });
     t = t.replace(/e\.p\./gi, " ");
     // Move numbers ("12.", "12...", "12…", "12)"). When glued to the previous move ("e52.Nf3"),
-    // the first digit is that move's rank.
+    // the first digit is that move's rank — and a ")" there closes a variation ("d3)").
     t = t.replace(/(\d+)\s*(\.{2,}|…|\.|\))/g, function (m, num, dots, off, s) {
-      return (off > 0 && /[a-hA-Hㄱ-ㅣ가-힣]/.test(s[off - 1]) ? num[0] : "") + " ";
+      var glued = off > 0 && /[a-hA-Hㄱ-ㅣ가-힣]/.test(s[off - 1]);
+      if (dots === ")") return glued ? num + " ) " : " ";
+      return (glued ? num[0] : "") + " ";
     });
+    // Variations: brackets become their own tokens.
+    t = t.replace(/[()\[\]]/g, function (c) { return c === "(" || c === "[" ? " ( " : " ) "; });
     // OCR sometimes splits the rank off: "Nf 3".
     t = t.replace(/([a-hA-H])[ \t]+([1-8])(?=[\s+#!?,;]|$)/g, "$1$2");
     t = t.replace(/[!?+#‼⁇⁉⁈±∓⩲⩱∞□⊥→↑⇆○]/g, " ");
@@ -1214,15 +1220,43 @@
     return { reason: reason, suggestions: suggestions };
   }
 
+  // Reads the main line plus variations in parentheses. Each move is { move, san, vars }, where vars
+  // are alternative lines to that move: { entries, startPly, mainPly, prefix }. startPly is the ply
+  // index of the position the variation starts from; mainPly is where its top-level ancestor leaves
+  // the main line; prefix holds the entries from the root up to startPly.
   function parseMovetext(rootState, raw) {
     var state = clone(rootState);
     var positions = [state];
     var moves = [];
     var skipped = [];
     var error = null;
+    var varBroken = 0;
+    var main = { entries: moves, state: state, before: null, ply: 0, prefix: [], isMain: true };
+    var stack = [main];
+    function closeFrame() {
+      var f = stack.pop();
+      if (f.line && !f.entries.length) f.owner.vars.splice(f.owner.vars.indexOf(f.line), 1);
+    }
     var chunks = splitMovetext(raw);
     for (var i = 0; i < chunks.length && !error; i++) {
       var chunk = chunks[i];
+      var top = stack[stack.length - 1];
+      if (chunk === "(") {
+        // A variation replaces the last move read on the line it follows.
+        var owner = top.dead ? null : top.entries[top.entries.length - 1];
+        var line = null;
+        if (owner) {
+          line = { entries: [], startPly: top.ply - 1, mainPly: top.isMain ? top.ply - 1 : top.mainPly,
+                   prefix: top.prefix.concat(top.entries.slice(0, -1)) };
+          owner.vars.push(line);
+        }
+        stack.push({ entries: line ? line.entries : [], state: top.before, before: null, ply: top.ply - 1,
+                     prefix: line ? line.prefix : [], mainPly: line ? line.mainPly : 0,
+                     line: line, owner: owner, dead: !line });
+        continue;
+      }
+      if (chunk === ")") { if (stack.length > 1) closeFrame(); continue; }
+      if (top.dead) continue;
       // "soft" readings may just be commentary, so a failed soft reading is skipped rather than reported.
       var readings = [];
       if (HANGUL_RE.test(chunk)) {
@@ -1237,24 +1271,31 @@
       for (var k = 0; k < readings.length && !seq; k++) {
         var rd = readings[k];
         if (!rd.text || rd.text.length > 40 || !looksLikeMove(rd.text)) continue;
-        seq = readMoves(state, rd.text, 0);
+        seq = readMoves(top.state, rd.text, 0);
         if (!seq && !rd.soft && !hardFail) hardFail = rd.text;
       }
       if (seq) {
         seq.forEach(function (mv) {
-          var san = moveToSan(state, mv);
-          state = applyMove(state, mv);
-          positions.push(state);
-          moves.push({ move: mv, san: san });
+          var san = moveToSan(top.state, mv);
+          top.before = top.state;
+          top.state = applyMove(top.state, mv);
+          top.ply++;
+          top.entries.push({ move: mv, san: san, vars: [] });
+          if (top.isMain) positions.push(top.state);
         });
-      } else if (hardFail) {
-        var diag = diagnoseToken(state, hardFail);
+      } else if (hardFail && top.isMain) {
+        var diag = diagnoseToken(top.state, hardFail);
         error = { index: moves.length, token: chunk, reason: diag.reason, suggestions: diag.suggestions };
+      } else if (hardFail) {
+        // A broken variation keeps the moves read so far; the rest of it is skipped.
+        top.dead = true;
+        varBroken++;
       } else {
         skipped.push(chunk);
       }
     }
-    return { positions: positions, moves: moves, error: error, skipped: skipped };
+    while (stack.length > 1) closeFrame();
+    return { positions: positions, moves: moves, error: error, skipped: skipped, varBroken: varBroken };
   }
 
   // ---------- app state ----------
@@ -1267,7 +1308,7 @@
     selectedSquare: null, legalTargets: [],
     selectedPalette: null,
     pendingPromotion: null,
-    parseError: null, parseSkipped: [],
+    parseError: null, parseSkipped: [], parseVarBroken: 0, chipRefs: [],
     drag: null
   };
   App.viewPositions = [clone(App.rootState)];
@@ -1284,6 +1325,7 @@
     App.divergeAt = null;
     App.parseError = null;
     App.parseSkipped = [];
+    App.parseVarBroken = 0;
     App.selectedSquare = null;
     App.legalTargets = [];
     Game.active = false; Game.moving = false; Game.result = null;
@@ -1313,6 +1355,7 @@
   var copyFenBtn = document.getElementById("copyFenBtn");
   var backToBookBtn = document.getElementById("backToBookBtn");
   var divergeNoteEl = document.getElementById("divergeNote");
+  var divergeTextEl = document.getElementById("divergeText");
   var tabReplayBtn = document.getElementById("tabReplayBtn");
   var tabSetupBtn = document.getElementById("tabSetupBtn");
   var panelReplay = document.getElementById("panelReplay");
@@ -1711,8 +1754,11 @@
 
   function renderParseError() {
     var skipped = App.parseSkipped || [];
-    parseSkippedEl.style.display = skipped.length ? "block" : "none";
-    parseSkippedEl.textContent = skipped.length ? "수가 아니라서 건너뛴 부분: " + skipped.slice(0, 12).join(", ") + (skipped.length > 12 ? " …" : "") : "";
+    var notes = [];
+    if (skipped.length) notes.push("수가 아니라서 건너뛴 부분: " + skipped.slice(0, 12).join(", ") + (skipped.length > 12 ? " …" : ""));
+    if (App.parseVarBroken) notes.push("변화수 " + App.parseVarBroken + "개는 중간에 읽을 수 없는 수가 있어 거기까지만 표시합니다.");
+    parseSkippedEl.style.display = notes.length ? "block" : "none";
+    parseSkippedEl.textContent = notes.join(" ");
     var err = App.parseError;
     if (!err) { parseErrorEl.style.display = "none"; parseErrorEl.textContent = ""; return; }
     var reasonText = {
@@ -1739,26 +1785,103 @@
     return '<button type="button" class="' + classes.join(" ") + '" data-ply="' + ply + '">' + escapeHtml(moveObj.san) + "</button>";
   }
 
+  // Move number label for the move played from ply index `ply`.
+  function moveNumberAt(ply) {
+    var abs = (App.rootState.turn === "b" ? 1 : 0) + ply;
+    return { no: App.rootState.fullmove + Math.floor(abs / 2), white: abs % 2 === 0 };
+  }
+
+  // Plain list of moves[from..] with data-ply chips (quiz view and hand-played moves).
+  function linearMovesHtml(moves, from) {
+    var html = "";
+    for (var i = from; i < moves.length; i++) {
+      var n = moveNumberAt(i);
+      if (n.white) html += '<span class="move-num">' + n.no + ".</span>";
+      else if (i === from) html += '<span class="move-num">' + n.no + "...</span>";
+      html += chipHtml(moves[i], i);
+    }
+    return html;
+  }
+
+  function mainLine() { return { entries: App.bookMoves, startPly: 0, prefix: [], isMain: true }; }
+  function pathKey(moves) { return moves.map(function (e) { return moveToUci(e.move); }).join(" "); }
+
+  // Follows `moves` through the book tree. Returns how many of them are in the book (main line or a
+  // variation) and the line/index of the last one matched.
+  function treeWalk(moves) {
+    var line = mainLine(), j = 0, n = 0;
+    for (; n < moves.length; n++) {
+      var e = line.entries[j];
+      if (!e) break;
+      if (sameMove(e.move, moves[n].move)) { j++; continue; }
+      var v = e.vars.filter(function (l) { return sameMove(l.entries[0].move, moves[n].move); })[0];
+      if (!v) break;
+      line = v; j = 1;
+    }
+    return { matched: n, line: line, idx: j - 1 };
+  }
+
+  // Book line (main or variation) as chips, with its variations under the move they replace.
+  function treeLineHtml(line, depth, refs, viewKey) {
+    var out = "", key = line.prefix.length ? pathKey(line.prefix) + " " : "", needNum = true;
+    line.entries.forEach(function (e, i) {
+      var n = moveNumberAt(line.startPly + i);
+      key += moveToUci(e.move) + " ";
+      if (n.white) out += '<span class="move-num">' + n.no + ".</span>";
+      else if (needNum) out += '<span class="move-num">' + n.no + "...</span>";
+      needNum = false;
+      refs.push({ line: line, idx: i });
+      out += '<button type="button" class="move-chip' + (key.trim() === viewKey ? " current" : "") +
+             '" data-ref="' + (refs.length - 1) + '">' + escapeHtml(e.san) + "</button>";
+      e.vars.forEach(function (v) {
+        var inner = treeLineHtml(v, depth + 1, refs, viewKey);
+        out += depth === 0 ? '<span class="variation">' + inner + "</span>" : '<span class="variation nested">(' + inner + ")</span>";
+        needNum = true;
+      });
+    });
+    return out;
+  }
+
   function renderMoveList() {
     var html = "";
-    var turn = App.rootState.turn;
-    var moveNo = App.rootState.fullmove;
-    var i = 0;
-    // During a quiz only the moves already reached are listed.
-    var moves = Quiz.active ? App.viewMoves.slice(0, App.currentPly) : App.viewMoves;
-    if (turn === "b" && moves.length > 0) {
-      html += '<span class="move-pair"><span class="move-num">' + moveNo + "...</span>" + chipHtml(moves[0], 0) + "</span>";
-      i = 1; moveNo++;
+    if (Quiz.active) {
+      // During a quiz only the moves already reached are listed, without variations.
+      html = linearMovesHtml(App.viewMoves.slice(0, App.currentPly), 0);
+      moveListEl.innerHTML = html || '<span class="muted">아직 둔 수가 없습니다.</span>';
+      divergeNoteEl.style.display = "none";
+      return;
     }
-    for (; i < moves.length; i += 2) {
-      var white = moves[i];
-      var black = moves[i + 1];
-      html += '<span class="move-pair"><span class="move-num">' + moveNo + ".</span>" +
-              chipHtml(white, i) + (black ? chipHtml(black, i + 1) : "") + "</span>";
-      moveNo++;
+    var refs = [];
+    App.chipRefs = refs;
+    var viewKey = pathKey(App.viewMoves.slice(0, App.currentPly));
+    html = treeLineHtml(mainLine(), 0, refs, viewKey);
+    var walk = treeWalk(App.viewMoves);
+    if (walk.matched < App.viewMoves.length) {
+      // Moves played by hand (or from an engine line / game) after leaving the book.
+      html += '<div class="manual-line"><span class="field-label">직접 둔 수</span> ' + linearMovesHtml(App.viewMoves, walk.matched) + "</div>";
     }
-    moveListEl.innerHTML = html || (Quiz.active ? '<span class="muted">아직 둔 수가 없습니다.</span>' : '<span class="muted">기보를 입력하고 재생 버튼을 누르세요.</span>');
+    moveListEl.innerHTML = html || '<span class="muted">기보를 입력하고 재생 버튼을 누르세요.</span>';
     divergeNoteEl.style.display = App.divergeAt !== null ? "inline-flex" : "none";
+    divergeTextEl.textContent = walk.matched < App.viewMoves.length ? "책 수순에서 벗어남" : "변화수를 보는 중";
+  }
+
+  // Shows a book line (main or variation) on the board, at the move with index `idx`.
+  function openTreeLine(line, idx) {
+    if (line.isMain) {
+      App.viewPositions = App.bookPositions.slice();
+      App.viewMoves = App.bookMoves.slice();
+      App.divergeAt = null;
+    } else {
+      var entries = line.prefix.concat(line.entries);
+      var s = clone(App.rootState), positions = [s];
+      entries.forEach(function (e) { s = applyMove(s, e.move); positions.push(s); });
+      App.viewPositions = positions;
+      App.viewMoves = entries;
+      App.divergeAt = line.mainPly;
+    }
+    App.currentPly = line.startPly + idx + 1;
+    App.selectedSquare = null; App.legalTargets = []; App.pendingPromotion = null;
+    render();
   }
 
   function renderSetupPanel() {
@@ -2371,7 +2494,9 @@
     } else {
       var san = moveToSan(state, move);
       Quiz.tries++;
-      Quiz.feedback = { type: "wrong", text: san + " — 책의 수가 아닙니다. 다시 둬 보거나 '정답 보기'를 누르세요." };
+      var inVariation = book.vars && book.vars.some(function (v) { return sameMove(v.entries[0].move, move); });
+      Quiz.feedback = { type: "wrong", text: san + (inVariation ? " — 책의 변화수에 나오는 수지만 본 수순은 아닙니다." : " — 책의 수가 아닙니다.") +
+                        " 다시 둬 보거나 '정답 보기'를 누르세요." };
       Quiz.compare = { fen: toFEN(state), turn: state.turn, user: { uci: moveToUci(move), san: san },
                        book: { uci: moveToUci(book.move), san: book.san }, scores: {}, depth: 0, done: false };
       App.selectedSquare = null; App.legalTargets = []; App.pendingPromotion = null;
@@ -2467,8 +2592,14 @@
     var bookMove = (App.divergeAt === null && App.currentPly < App.bookMoves.length) ? App.bookMoves[App.currentPly].move : null;
     var isBookMove = bookMove && bookMove.from === move.from && bookMove.to === move.to &&
                       (bookMove.promotion || null) === (move.promotion || null);
+    // Outside a game, a move that follows a book variation opens that variation, so its later moves can be stepped through.
+    var path = App.viewMoves.slice(0, App.currentPly).concat([{ move: move }]);
+    var walk = !isBookMove && !Game.active ? treeWalk(path) : null;
     if (isBookMove) {
       App.currentPly += 1;
+    } else if (walk && walk.matched === path.length && !walk.line.isMain) {
+      openTreeLine(walk.line, walk.idx);
+      return;
     } else {
       App.viewPositions = App.viewPositions.slice(0, App.currentPly + 1);
       App.viewMoves = App.viewMoves.slice(0, App.currentPly);
@@ -2678,6 +2809,11 @@
     moveListEl.addEventListener("click", function (e) {
       var btn = e.target.closest(".move-chip");
       if (!btn || Game.active || Quiz.active) return;
+      if (btn.dataset.ref != null) {
+        var ref = App.chipRefs[Number(btn.dataset.ref)];
+        if (ref) openTreeLine(ref.line, ref.idx);
+        return;
+      }
       App.currentPly = Number(btn.dataset.ply);
       App.selectedSquare = null;
       App.legalTargets = [];
@@ -2725,6 +2861,7 @@
       App.currentPly = result.error ? result.moves.length : 0;
       App.parseError = result.error;
       App.parseSkipped = result.skipped;
+      App.parseVarBroken = result.varBroken;
       App.selectedSquare = null; App.legalTargets = [];
       endGame(null);
       resetQuiz();
