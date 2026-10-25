@@ -317,6 +317,12 @@
   .game-start { flex-wrap: wrap; }
   .game-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
   .game-info { font-size: .9rem; font-weight: 600; }
+  .quiz-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .quiz-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .quiz-setup { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; }
+  .quiz-feedback { font-size: .9rem; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); }
+  .quiz-feedback.correct, .quiz-feedback.done { background: var(--accent-soft); color: var(--text); font-weight: 600; }
+  .quiz-feedback.wrong { background: color-mix(in srgb, var(--danger) 14%, var(--surface-2)); color: var(--danger); }
   .game-result { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 8px; background: var(--accent-soft); }
   .analysis { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
   .analysis-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
@@ -402,7 +408,7 @@
       </div>
 
       <div id="panelReplay" class="panel-card">
-        <div class="field-group">
+        <div class="field-group" id="replayInput">
           <label class="field-label" for="movetextInput">기보 입력 / 붙여넣기 (메인 라인만, 괄호 속 변화수는 무시)</label>
           <textarea id="movetextInput" placeholder="1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 ..."></textarea>
           <div style="display:flex; gap:8px; align-items:center;">
@@ -412,6 +418,33 @@
           <div class="hint">대충 쳐도 됩니다: <code>e4 e5 nf3 nc6</code>, <code>1.e4e5 2.Nf3</code>, <code>0-0</code>, <code>e2-e4</code>, <code>♘f3</code>, <code>나이트f3</code>, 한글 자판 상태로 친 <code>ㄷ4</code>도 읽습니다. 책 사진은 휴대폰 기본 기능(아이폰 '텍스트 인식', 갤럭시 '텍스트 추출'·구글 렌즈)으로 글자를 복사해 붙여넣어도 됩니다.</div>
           <div id="parseError" class="error-banner"></div>
           <div id="parseSkipped" class="hint" style="display:none;"></div>
+        </div>
+
+        <div class="quiz-card">
+          <div class="quiz-head">
+            <strong>다음 수 맞히기</strong>
+            <span id="quizScore" class="analysis-info"></span>
+          </div>
+          <div id="quizSetup" class="quiz-setup">
+            <div class="radio-group">
+              <span class="field-label">맞힐 쪽</span>
+              <label><input type="radio" name="quizSide" value="w" checked> 백</label>
+              <label><input type="radio" name="quizSide" value="b"> 흑</label>
+              <label><input type="radio" name="quizSide" value="both"> 양쪽</label>
+            </div>
+            <button class="btn small primary" id="quizStartBtn">지금 국면부터 시작</button>
+          </div>
+          <div id="quizError" class="inline-error"></div>
+          <div id="quizPlaying" class="game-section" style="display:none;">
+            <div id="quizPrompt" class="status-banner"></div>
+            <div id="quizCompare" class="hint"></div>
+            <div class="game-buttons">
+              <button class="btn small" id="quizRevealBtn">정답 보기</button>
+              <button class="btn small" id="quizStopBtn">그만하기</button>
+            </div>
+          </div>
+          <div id="quizFeedback" class="quiz-feedback" style="display:none;"></div>
+          <div id="quizHint" class="hint">기보를 재생하고 맞히기를 시작할 국면으로 보드를 옮긴 뒤 시작하세요. 책에서 둔 다음 수를 보드에 직접 둬서 맞힙니다. 맞히는 동안에는 뒤의 수순이 가려집니다.</div>
         </div>
 
         <div class="field-group">
@@ -1254,6 +1287,7 @@
     App.selectedSquare = null;
     App.legalTargets = [];
     Game.active = false; Game.moving = false; Game.result = null;
+    resetQuiz();
   }
 
   function visualToSquare(row, col, flipped) {
@@ -1335,6 +1369,18 @@
   var gameResultEl = document.getElementById("gameResult");
   var gameResultTextEl = document.getElementById("gameResultText");
   var gameAnalyzeBtn = document.getElementById("gameAnalyzeBtn");
+  var replayInputEl = document.getElementById("replayInput");
+  var quizScoreEl = document.getElementById("quizScore");
+  var quizSetupEl = document.getElementById("quizSetup");
+  var quizStartBtn = document.getElementById("quizStartBtn");
+  var quizErrorEl = document.getElementById("quizError");
+  var quizPlayingEl = document.getElementById("quizPlaying");
+  var quizPromptEl = document.getElementById("quizPrompt");
+  var quizCompareEl = document.getElementById("quizCompare");
+  var quizRevealBtn = document.getElementById("quizRevealBtn");
+  var quizStopBtn = document.getElementById("quizStopBtn");
+  var quizFeedbackEl = document.getElementById("quizFeedback");
+  var quizHintEl = document.getElementById("quizHint");
 
   // ---------- tabs ----------
   function setTab(name) {
@@ -1642,11 +1688,12 @@
 
   function renderToolbar() {
     var last = App.viewPositions.length - 1;
-    // Stepping through moves is locked during a game; use 무르기 instead.
-    firstBtn.disabled = Game.active || App.currentPly <= 0;
-    prevBtn.disabled = Game.active || App.currentPly <= 0;
-    nextBtn.disabled = Game.active || App.currentPly >= last;
-    lastBtn.disabled = Game.active || App.currentPly >= last;
+    // Stepping through moves is locked during a game (use 무르기) and a quiz (it would reveal answers).
+    var locked = Game.active || Quiz.active;
+    firstBtn.disabled = locked || App.currentPly <= 0;
+    prevBtn.disabled = locked || App.currentPly <= 0;
+    nextBtn.disabled = locked || App.currentPly >= last;
+    lastBtn.disabled = locked || App.currentPly >= last;
     plyIndicatorEl.textContent = App.currentPly + " / " + last;
 
     var state = displayState();
@@ -1697,18 +1744,20 @@
     var turn = App.rootState.turn;
     var moveNo = App.rootState.fullmove;
     var i = 0;
-    if (turn === "b" && App.viewMoves.length > 0) {
-      html += '<span class="move-pair"><span class="move-num">' + moveNo + "...</span>" + chipHtml(App.viewMoves[0], 0) + "</span>";
+    // During a quiz only the moves already reached are listed.
+    var moves = Quiz.active ? App.viewMoves.slice(0, App.currentPly) : App.viewMoves;
+    if (turn === "b" && moves.length > 0) {
+      html += '<span class="move-pair"><span class="move-num">' + moveNo + "...</span>" + chipHtml(moves[0], 0) + "</span>";
       i = 1; moveNo++;
     }
-    for (; i < App.viewMoves.length; i += 2) {
-      var white = App.viewMoves[i];
-      var black = App.viewMoves[i + 1];
+    for (; i < moves.length; i += 2) {
+      var white = moves[i];
+      var black = moves[i + 1];
       html += '<span class="move-pair"><span class="move-num">' + moveNo + ".</span>" +
               chipHtml(white, i) + (black ? chipHtml(black, i + 1) : "") + "</span>";
       moveNo++;
     }
-    moveListEl.innerHTML = html || '<span class="muted">기보를 입력하고 재생 버튼을 누르세요.</span>';
+    moveListEl.innerHTML = html || (Quiz.active ? '<span class="muted">아직 둔 수가 없습니다.</span>' : '<span class="muted">기보를 입력하고 재생 버튼을 누르세요.</span>');
     divergeNoteEl.style.display = App.divergeAt !== null ? "inline-flex" : "none";
   }
 
@@ -1727,6 +1776,7 @@
 
   function render() {
     updateGame();
+    quizStep();
     renderBoard();
     renderToolbar();
     renderParseError();
@@ -1736,6 +1786,7 @@
     schedulePump();
     renderAnalysis();
     renderGamePanel();
+    renderQuizPanel();
   }
 
   // ---------- clipboard ----------
@@ -1808,6 +1859,14 @@
     active: false, result: null,
     myColor: "w", engineColor: "b", level: 4, startPly: 0,
     moving: false, thinkingSince: 0
+  };
+
+  // ---------- guess the next book move ----------
+  var QUIZ_KEY = "chess-book-viewer:quiz";
+  var Quiz = {
+    active: false, side: "w", correct: 0, total: 0, tries: 0,
+    feedback: null, compare: null, summary: null,
+    timer: null, timerPly: -1
   };
 
   function absUrl(u) { try { return new URL(u, location.href).href; } catch (e) { return u; } }
@@ -1901,7 +1960,7 @@
 
   // Called on every render; only does work when the shown position changed.
   function requestAnalysis() {
-    if (!Engine.on || Game.active) return;
+    if (!Engine.on || Game.active || Quiz.active) return;
     var state = displayState();
     var fen = toFEN(state);
     if (fen === Engine.fen) return;
@@ -1910,18 +1969,26 @@
     Engine.note = analysisBlocker(state);
   }
 
-  // The engine runs one job at a time: the computer's move in a game, or analysis of the shown position.
+  // The engine runs one job at a time: the computer's move in a game, scoring a guess against the
+  // book move, or analysis of the shown position.
+  function makeJob(kind, fen, moves) {
+    return { kind: kind, fen: fen, moves: moves || null, key: kind + "|" + fen + "|" + (moves || []).join(",") };
+  }
   function wantedJob() {
     if (Game.active) {
       var st = displayState();
       if (Game.moving || App.mode !== "replay" || st.turn !== Game.engineColor) return null;
-      return { kind: "play", fen: toFEN(st) };
+      return makeJob("play", toFEN(st));
+    }
+    if (Quiz.active) {
+      var c = Quiz.compare;
+      return c && !c.done ? compareJob(c) : null;
     }
     if (!Engine.on || Engine.note || !Engine.fen) return null;
-    var job = { kind: "analysis", fen: Engine.fen };
+    var job = makeJob("analysis", Engine.fen);
     return sameJob(job, Engine.finished) ? null : job;
   }
-  function sameJob(a, b) { return !!a && !!b && a.kind === b.kind && a.fen === b.fen; }
+  function sameJob(a, b) { return !!a && !!b && a.key === b.key; }
 
   function schedulePump() { clearTimeout(Engine.timer); Engine.timer = setTimeout(pump, 150); }
 
@@ -1939,6 +2006,12 @@
       Engine.send("position fen " + job.fen);
       Engine.send("go depth " + lv.depth + " movetime 3000");
       Game.thinkingSince = Date.now();
+    } else if (job.kind === "compare") {
+      // searchmoves limits the search to the two moves, so one search scores both.
+      Engine.send("setoption name MultiPV value 2");
+      Engine.send("setoption name Skill Level value 20");
+      Engine.send("position fen " + job.fen);
+      Engine.send("go depth " + Math.min(14, Engine.depthLimit) + " searchmoves " + job.moves.join(" "));
     } else {
       Engine.send("setoption name MultiPV value " + ENGINE_LINES);
       Engine.send("setoption name Skill Level value 20");
@@ -1969,6 +2042,7 @@
       Engine.searching = false; Engine.stopSent = false; Engine.job = null;
       if (done && !stopped) {
         if (done.kind === "analysis") Engine.finished = done;
+        else if (done.kind === "compare") { if (Quiz.compare && compareJob(Quiz.compare).key === done.key) Quiz.compare.done = true; }
         else playEngineMove(done, line.split(/\s+/)[1]);
       }
       pump();
@@ -1976,15 +2050,18 @@
       return;
     }
     if (line.indexOf("info ") !== 0 || line.indexOf(" pv ") === -1) return;
-    if (!Engine.job || Engine.job.kind !== "analysis" || Engine.job.fen !== Engine.fen) return;
-    if (Engine.stopSent || / (lower|upper)bound/.test(line)) return;
+    var job = Engine.job;
+    if (!job || Engine.stopSent || / (lower|upper)bound/.test(line)) return;
     var sc = line.match(/ score (cp|mate) (-?\d+)/);
     if (!sc) return;
     var depth = Number((line.match(/ depth (\d+)/) || [0, 0])[1]);
     var mpv = Number((line.match(/ multipv (\d+)/) || [0, 1])[1]);
+    var pv = line.slice(line.indexOf(" pv ") + 4).trim().split(/\s+/);
+    if (job.kind === "compare") { recordCompare(job, pv[0], sc, depth); return; }
+    if (job.kind !== "analysis" || job.fen !== Engine.fen) return;
     // UCI scores are from the side to move; the panel always shows White's point of view.
     var sign = Engine.state.turn === "w" ? 1 : -1;
-    var conv = pvToMoves(Engine.state, line.slice(line.indexOf(" pv ") + 4).trim().split(/\s+/), PV_PLIES);
+    var conv = pvToMoves(Engine.state, pv, PV_PLIES);
     if (!conv.moves.length) return;
     Engine.lines[mpv - 1] = {
       cp: sc[1] === "cp" ? sign * Number(sc[2]) : null,
@@ -2063,16 +2140,16 @@
   function queueAnalysisRender() {
     if (Engine.renderQueued) return;
     Engine.renderQueued = true;
-    requestAnimationFrame(function () { Engine.renderQueued = false; renderAnalysis(); renderGamePanel(); });
+    requestAnimationFrame(function () { Engine.renderQueued = false; renderAnalysis(); renderGamePanel(); renderQuizPanel(); });
   }
 
   function renderAnalysis() {
     analysisToggle.checked = Engine.on;
-    analysisToggle.disabled = Game.active;
-    if (Game.active) {
-      // Hidden during a game so the engine's answer isn't given away.
+    analysisToggle.disabled = Game.active || Quiz.active;
+    if (Game.active || Quiz.active) {
+      // Hidden during a game or a quiz so the engine's answer isn't given away.
       analysisBodyEl.style.display = "none";
-      analysisInfoEl.textContent = Engine.on ? "대국 중에는 숨깁니다" : "";
+      analysisInfoEl.textContent = Engine.on ? (Game.active ? "대국 중에는 숨깁니다" : "맞히기 중에는 숨깁니다") : "";
       renderArrow(null);
       return;
     }
@@ -2125,6 +2202,7 @@
     if (color === "random") color = Math.random() < .5 ? "w" : "b";
     var level = Number(gameLevelSel.value);
     gameErrorEl.textContent = "";
+    stopQuiz(false);
     if (selectedRadio("gameStart") === "initial") {
       App.rootState = parseFEN(STANDARD_FEN);
       resetDerivedFromRoot();
@@ -2224,6 +2302,155 @@
     undoBtn.disabled = undoTarget() < 0;
   }
 
+  // ---------- quiz flow ----------
+  function quizGuesses(turn) { return Quiz.side === "both" || Quiz.side === turn; }
+  function bookMoveAt(ply) { return ply < App.bookMoves.length ? App.bookMoves[ply] : null; }
+  function moveToUci(m) { return algebraic(m.from) + algebraic(m.to) + (m.promotion ? m.promotion.toLowerCase() : ""); }
+  function sameMove(a, b) { return a.from === b.from && a.to === b.to && (a.promotion || null) === (b.promotion || null); }
+  function compareJob(c) { return makeJob("compare", c.fen, [c.user.uci, c.book.uci]); }
+
+  function resetQuiz() {
+    clearTimeout(Quiz.timer);
+    Quiz.timerPly = -1;
+    Quiz.active = false; Quiz.compare = null; Quiz.feedback = null; Quiz.summary = null;
+  }
+
+  function startQuiz() {
+    quizErrorEl.textContent = "";
+    if (Game.active) { quizErrorEl.textContent = "대국 중에는 시작할 수 없습니다. 대국을 먼저 끝내세요."; return; }
+    if (App.divergeAt !== null) {
+      // Quiz follows the book, so drop any side line first.
+      App.currentPly = Math.min(App.currentPly, App.divergeAt);
+      App.viewPositions = App.bookPositions.slice();
+      App.viewMoves = App.bookMoves.slice();
+      App.divergeAt = null;
+    }
+    if (!bookMoveAt(App.currentPly)) {
+      quizErrorEl.textContent = App.bookMoves.length
+        ? "이 국면 뒤로는 책의 수가 없습니다. 보드를 앞쪽 국면으로 옮긴 뒤 시작하세요."
+        : "먼저 위에 기보를 붙여넣고 재생하세요.";
+      render();
+      return;
+    }
+    resetQuiz();
+    Quiz.side = selectedRadio("quizSide");
+    try { localStorage.setItem(QUIZ_KEY, Quiz.side); } catch (e) {}
+    Quiz.active = true; Quiz.correct = 0; Quiz.total = 0; Quiz.tries = 0;
+    if (Quiz.side !== "both") App.flipped = Quiz.side === "b";
+    App.selectedSquare = null; App.legalTargets = [];
+    render();
+  }
+
+  function stopQuiz(finished) {
+    if (!Quiz.active) return;
+    var total = Quiz.total, correct = Quiz.correct;
+    resetQuiz();
+    if (total) {
+      Quiz.summary = (finished ? "기보 끝까지 왔습니다. " : "") + total + "수 중 " + correct + "수를 한 번에 맞혔습니다 (" +
+                     Math.round(correct / total * 100) + "%).";
+    } else if (finished) {
+      Quiz.summary = "기보 끝까지 왔습니다.";
+    }
+  }
+
+  // Steps along the book line; the book move is already in viewPositions.
+  function quizAdvance() {
+    App.currentPly += 1;
+    Quiz.tries = 0; Quiz.compare = null;
+    App.selectedSquare = null; App.legalTargets = []; App.pendingPromotion = null;
+  }
+
+  function quizGuess(state, move) {
+    var book = bookMoveAt(App.currentPly);
+    if (!book) return;
+    if (sameMove(move, book.move)) {
+      Quiz.total++;
+      if (Quiz.tries === 0) Quiz.correct++;
+      Quiz.feedback = { type: "correct", text: (Quiz.tries === 0 ? "정답! " : "맞았습니다. ") + book.san };
+      quizAdvance();
+    } else {
+      var san = moveToSan(state, move);
+      Quiz.tries++;
+      Quiz.feedback = { type: "wrong", text: san + " — 책의 수가 아닙니다. 다시 둬 보거나 '정답 보기'를 누르세요." };
+      Quiz.compare = { fen: toFEN(state), turn: state.turn, user: { uci: moveToUci(move), san: san },
+                       book: { uci: moveToUci(book.move), san: book.san }, scores: {}, depth: 0, done: false };
+      App.selectedSquare = null; App.legalTargets = []; App.pendingPromotion = null;
+    }
+    render();
+  }
+
+  function quizReveal() {
+    var book = bookMoveAt(App.currentPly);
+    if (!Quiz.active || !book || !quizGuesses(displayState().turn)) return;
+    Quiz.total++;
+    Quiz.feedback = { type: "reveal", text: "정답은 " + book.san + "였습니다." };
+    quizAdvance();
+    render();
+  }
+
+  // Called on every render: ends at the end of the book, and plays the other side's book moves.
+  function quizStep() {
+    if (!Quiz.active) return;
+    if (!bookMoveAt(App.currentPly)) { stopQuiz(true); return; }
+    if (App.mode !== "replay" || quizGuesses(displayState().turn) || Quiz.timerPly === App.currentPly) return;
+    var ply = App.currentPly;
+    Quiz.timerPly = ply;
+    Quiz.timer = setTimeout(function () {
+      Quiz.timerPly = -1;
+      if (Quiz.active && App.mode === "replay" && App.currentPly === ply) App.currentPly += 1;
+      render();
+    }, 700);
+  }
+
+  function recordCompare(job, uci, sc, depth) {
+    var c = Quiz.compare;
+    if (!c || compareJob(c).key !== job.key) return;
+    var sign = c.turn === "w" ? 1 : -1;
+    c.scores[uci] = { cp: sc[1] === "cp" ? sign * Number(sc[2]) : null, mate: sc[1] === "mate" ? sign * Number(sc[2]) : null };
+    c.depth = depth;
+    queueAnalysisRender();
+  }
+
+  // White-point-of-view score as one comparable number (mates beyond any centipawn value).
+  function scoreValue(ln) {
+    if (ln.mate == null) return ln.cp;
+    return ln.mate > 0 ? 100000 - ln.mate : -100000 - ln.mate;
+  }
+  // The book move is never named here so the answer stays hidden.
+  function compareText(c) {
+    var u = c.scores[c.user.uci], b = c.scores[c.book.uci];
+    if (!u || !b) return Engine.status === "failed" ? "" : "엔진이 내 수와 책의 수를 비교하는 중…";
+    var loss = (scoreValue(b) - scoreValue(u)) * (c.turn === "w" ? 1 : -1);
+    var verdict = loss < -30 ? "엔진은 오히려 내 수를 더 높게 봅니다!"
+      : loss <= 30 ? "엔진 기준으로는 책의 수만큼 좋은 수입니다."
+      : loss <= 100 ? "책의 수보다 조금 못합니다."
+      : loss <= 250 ? "책의 수보다 꽤 못합니다."
+      : "큰 실수입니다.";
+    return "엔진 평가 (백 기준" + (c.done ? "" : ", 계산 중") + "): 내 수 " + c.user.san + " " + formatScore(u) +
+           " · 책의 수 " + formatScore(b) + " — " + verdict;
+  }
+
+  function renderQuizPanel() {
+    replayInputEl.style.display = Quiz.active ? "none" : "";
+    quizSetupEl.style.display = Quiz.active ? "none" : "";
+    quizHintEl.style.display = Quiz.active ? "none" : "";
+    quizPlayingEl.style.display = Quiz.active ? "" : "none";
+    quizScoreEl.textContent = Quiz.active && Quiz.total ? Quiz.correct + " / " + Quiz.total + " 한 번에 맞힘" : "";
+    var fb = Quiz.active ? Quiz.feedback : (Quiz.summary ? { type: "done", text: Quiz.summary } : null);
+    quizFeedbackEl.style.display = fb ? "" : "none";
+    quizFeedbackEl.textContent = fb ? fb.text : "";
+    quizFeedbackEl.className = "quiz-feedback" + (fb ? " " + fb.type : "");
+    if (!Quiz.active) return;
+    var st = displayState();
+    var mine = quizGuesses(st.turn);
+    quizPromptEl.textContent = App.mode !== "replay" ? "세팅 탭에서는 멈춥니다. 재생 탭으로 돌아오세요."
+      : mine ? (st.turn === "w" ? "백" : "흑") + " 차례 — 책에서 둔 다음 수를 보드에 둬 보세요."
+      : "상대 수를 두는 중…";
+    quizCompareEl.textContent = Quiz.compare ? compareText(Quiz.compare) : "";
+    quizCompareEl.style.display = Quiz.compare ? "" : "none";
+    quizRevealBtn.disabled = !mine;
+  }
+
   // Plays an engine line on the board up to the clicked move, as a branch off the book line.
   function playEngineLine(li, upto) {
     var ln = Engine.lines[li];
@@ -2276,19 +2503,24 @@
     } else {
       move = legal[0];
     }
+    if (Quiz.active) { quizGuess(state, move); return true; }
     finalizeMove(state, move);
     return true;
   }
 
   // ---------- click / setup interactions ----------
-  function isComputersTurn() {
-    return Game.active && App.mode === "replay" && (Game.moving || displayState().turn !== Game.myColor);
+  // True while the board must not take moves: the computer's turn, or the quiz side not being guessed.
+  function boardLocked() {
+    if (App.mode !== "replay") return false;
+    if (Game.active) return Game.moving || displayState().turn !== Game.myColor;
+    if (Quiz.active) return Quiz.timerPly !== -1 || !quizGuesses(displayState().turn);
+    return false;
   }
 
   function onSquareClick(sq) {
     if (App.pendingPromotion) return;
     if (App.mode === "setup") { handleSetupClick(sq); return; }
-    if (isComputersTurn()) return;
+    if (boardLocked()) return;
     var state = displayState();
     var piece = state.board[sq];
     if (App.selectedSquare != null && App.legalTargets.indexOf(sq) !== -1) {
@@ -2374,7 +2606,7 @@
     var sqEl = e.target.closest(".sq");
     if (!sqEl) return;
     var sq = Number(sqEl.dataset.sq);
-    if (App.pendingPromotion || isComputersTurn()) return;
+    if (App.pendingPromotion || boardLocked()) return;
     var state = displayState();
     var piece = state.board[sq];
     if (!piece) { onSquareClick(sq); return; }
@@ -2445,7 +2677,7 @@
 
     moveListEl.addEventListener("click", function (e) {
       var btn = e.target.closest(".move-chip");
-      if (!btn || Game.active) return;
+      if (!btn || Game.active || Quiz.active) return;
       App.currentPly = Number(btn.dataset.ply);
       App.selectedSquare = null;
       App.legalTargets = [];
@@ -2471,6 +2703,14 @@
     undoBtn.onclick = undoMove;
     resignBtn.onclick = function () { endGame("기권했습니다. 컴퓨터의 승리입니다."); render(); };
     gameAnalyzeBtn.onclick = function () { setAnalysis(true); };
+
+    try {
+      var quizSide = document.querySelector('input[name="quizSide"][value="' + localStorage.getItem(QUIZ_KEY) + '"]');
+      if (quizSide) quizSide.checked = true;
+    } catch (e) {}
+    quizStartBtn.onclick = startQuiz;
+    quizRevealBtn.onclick = quizReveal;
+    quizStopBtn.onclick = function () { stopQuiz(false); render(); };
     initPhoto();
 
     playBtn.onclick = function () {
@@ -2487,6 +2727,7 @@
       App.parseSkipped = result.skipped;
       App.selectedSquare = null; App.legalTargets = [];
       endGame(null);
+      resetQuiz();
       render();
     };
     movetextInput.addEventListener("keydown", function (e) {
