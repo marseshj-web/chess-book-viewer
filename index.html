@@ -308,6 +308,32 @@
   textarea.recog-movetext { width: 100%; min-height: 72px; resize: vertical; font-family: var(--font-mono); font-size: .83rem; padding: 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
   .start-select { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; font-size: .83rem; max-width: 100%; }
 
+  .engine-arrow { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; }
+  .engine-arrow g { opacity: .72; }
+  .engine-arrow line { stroke: var(--accent); }
+  .engine-arrow polygon { fill: var(--accent); stroke: none; }
+  .analysis-body { display: flex; flex-direction: column; gap: 8px; }
+  .analysis { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+  .analysis-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  .analysis-toggle { display: flex; align-items: center; gap: 6px; font-size: .9rem; font-weight: 600; cursor: pointer; }
+  .analysis-info { font-size: .78rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+  .eval-row { display: flex; align-items: center; gap: 10px; }
+  .eval-bar { flex: 1; height: 14px; border-radius: 7px; overflow: hidden; background: var(--piece-black-fill); border: 1px solid var(--border); }
+  .eval-fill { height: 100%; width: 50%; background: var(--piece-white-fill); }
+  @media (prefers-reduced-motion: no-preference) {
+    .eval-fill { transition: width .35s ease; }
+  }
+  .eval-score { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 600; min-width: 4.2em; text-align: right; }
+  .eval-verdict { font-size: .88rem; }
+  .pv-lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+  .pv-line { display: flex; gap: 8px; align-items: baseline; font-family: var(--font-mono); font-size: .82rem; line-height: 1.6; }
+  .pv-score { flex: none; min-width: 3.8em; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+  .pv-moves { min-width: 0; }
+  .pv-num { color: var(--text-muted); }
+  .pv-move { border: none; background: none; color: var(--text); cursor: pointer; padding: 0 3px; border-radius: 4px; font: inherit; }
+  .pv-move:hover { background: var(--accent-soft); }
+  .pv-line:first-child .pv-moves .pv-move:first-of-type { font-weight: 700; color: var(--accent); }
+
   a { color: var(--accent); }
 </style>
 
@@ -322,6 +348,7 @@
       <div class="board-frame">
         <div class="board-wrap" id="boardWrap">
           <div id="board"></div>
+          <svg class="engine-arrow" id="engineArrow" viewBox="0 0 8 8" aria-hidden="true"></svg>
           <div class="promo-overlay" id="promoOverlay"></div>
         </div>
       </div>
@@ -338,6 +365,22 @@
       </div>
 
       <div id="statusBanner" class="status-banner">백 차례</div>
+
+      <div class="analysis">
+        <div class="analysis-head">
+          <label class="analysis-toggle"><input type="checkbox" id="analysisToggle"> 엔진 분석 (형세 · 최선수)</label>
+          <span class="analysis-info" id="analysisInfo"></span>
+        </div>
+        <div id="analysisBody" class="analysis-body" style="display:none;">
+          <div class="eval-row">
+            <div class="eval-bar" title="왼쪽 흰색이 백, 오른쪽 검은색이 흑의 몫"><div class="eval-fill" id="evalFill"></div></div>
+            <span class="eval-score" id="evalScore"></span>
+          </div>
+          <div class="eval-verdict" id="evalVerdict"></div>
+          <ol class="pv-lines" id="pvLines"></ol>
+          <div class="hint">수를 누르면 그 수까지 보드에 둬 봅니다 (책 수순으로 복귀 가능). 점수는 백 기준이며 +1.0은 대략 폰 한 개만큼 유리하다는 뜻입니다.</div>
+        </div>
+      </div>
 
       <div class="fen-row">
         <input id="fenDisplay" type="text" readonly aria-label="현재 국면 FEN">
@@ -1216,6 +1259,14 @@
   var stopRecogBtn = document.getElementById("stopRecogBtn");
   var photoStatusEl = document.getElementById("photoStatus");
   var photoResultsEl = document.getElementById("photoResults");
+  var engineArrowEl = document.getElementById("engineArrow");
+  var analysisToggle = document.getElementById("analysisToggle");
+  var analysisInfoEl = document.getElementById("analysisInfo");
+  var analysisBodyEl = document.getElementById("analysisBody");
+  var evalFillEl = document.getElementById("evalFill");
+  var evalScoreEl = document.getElementById("evalScore");
+  var evalVerdictEl = document.getElementById("evalVerdict");
+  var pvLinesEl = document.getElementById("pvLines");
 
   // ---------- tabs ----------
   function setTab(name) {
@@ -1611,6 +1662,8 @@
     renderParseError();
     renderMoveList();
     renderSetupPanel();
+    requestAnalysis();
+    renderAnalysis();
   }
 
   // ---------- clipboard ----------
@@ -1651,6 +1704,292 @@
       turn = turn === "w" ? "b" : "w";
     });
     return parts.join(" ");
+  }
+
+  // ---------- engine analysis (Stockfish 10, pure-JS build so no separate .wasm file is needed) ----------
+  // Loaded only when the toggle is on. Tries a worker on the bundled copy, then a blob worker that
+  // imports it (or the CDN copy), and finally the main thread with a shallower search.
+  var ANALYSIS_KEY = "chess-book-viewer:analysis";
+  var ENGINE_LOCAL = "engine/stockfish.asm.js";
+  var ENGINE_CDN = "https://cdn.jsdelivr.net/npm/stockfish@10.0.2/src/stockfish.asm.js";
+  var ENGINE_LINES = 3;
+  var PV_PLIES = 8;
+  var Engine = {
+    on: false, status: "idle", // idle | loading | ready | failed
+    send: null, depthLimit: 18,
+    fen: null, state: null, note: null, lines: [], depth: 0,
+    searching: false, searchFen: null, stopSent: false,
+    timer: null, renderQueued: false
+  };
+
+  function absUrl(u) { try { return new URL(u, location.href).href; } catch (e) { return u; } }
+
+  function workerHandle(w) {
+    return {
+      send: function (c) { w.postMessage(c); },
+      kill: function () { w.terminate(); },
+      listen: function (onLine, onFail) {
+        w.onmessage = function (e) { if (typeof e.data === "string") onLine(e.data); };
+        w.onerror = function (e) { if (e && e.preventDefault) e.preventDefault(); onFail(); };
+      }
+    };
+  }
+  function blobWorker(src) {
+    var blob = new Blob(["importScripts(" + JSON.stringify(src) + ");"], { type: "application/javascript" });
+    return new Worker(URL.createObjectURL(blob));
+  }
+  function mainThreadHandle(src) {
+    var sf = null, queue = [];
+    return {
+      mainThread: true,
+      send: function (c) { if (sf) sf.postMessage(c); else queue.push(c); },
+      kill: function () {},
+      listen: function (onLine, onFail) {
+        function start() {
+          try { sf = window.STOCKFISH(); } catch (e) { onFail(); return; }
+          sf.onmessage = function (l) { if (typeof l === "string") onLine(l); };
+          queue.splice(0).forEach(function (c) { sf.postMessage(c); });
+        }
+        if (typeof window.STOCKFISH === "function") { start(); return; }
+        var s = document.createElement("script");
+        s.src = src; s.onload = start; s.onerror = onFail;
+        document.head.appendChild(s);
+      }
+    };
+  }
+  function engineCandidates() {
+    var local = absUrl(ENGINE_LOCAL);
+    var list = [];
+    if (/^https?:/.test(local)) {
+      list.push(function () { return workerHandle(new Worker(ENGINE_LOCAL)); });
+      list.push(function () { return workerHandle(blobWorker(local)); });
+    }
+    list.push(function () { return workerHandle(blobWorker(ENGINE_CDN)); });
+    if (/^https?:/.test(local)) list.push(function () { return mainThreadHandle(local); });
+    list.push(function () { return mainThreadHandle(ENGINE_CDN); });
+    return list;
+  }
+
+  function loadEngine() {
+    if (Engine.status === "loading" || Engine.status === "ready") return;
+    Engine.status = "loading";
+    queueAnalysisRender();
+    var candidates = engineCandidates(), i = 0;
+    function next() {
+      if (i >= candidates.length) { Engine.status = "failed"; queueAnalysisRender(); return; }
+      var handle, ready = false, dead = false, timer;
+      try { handle = candidates[i++](); } catch (e) { next(); return; }
+      function fail() {
+        if (dead) return;
+        dead = true; clearTimeout(timer);
+        try { handle.kill(); } catch (e) {}
+        if (!ready) { next(); return; }
+        Engine.status = "failed"; Engine.searching = false; Engine.send = null;
+        queueAnalysisRender();
+      }
+      timer = setTimeout(fail, 30000);
+      handle.listen(function (line) {
+        if (ready) { onEngineLine(line); return; }
+        if (dead || line.indexOf("uciok") !== 0) return;
+        ready = true; clearTimeout(timer);
+        Engine.send = handle.send;
+        Engine.depthLimit = handle.mainThread ? 12 : 18;
+        Engine.status = "ready";
+        handle.send("setoption name MultiPV value " + ENGINE_LINES);
+        setTimeout(startSearch, 0);
+      }, fail);
+      handle.send("uci");
+    }
+    next();
+  }
+
+  function analysisBlocker(state) {
+    var w = diagramWarnings(state);
+    if (w.length) return "이 국면은 분석할 수 없습니다: " + w.join(", ") + ".";
+    var st = positionStatus(state);
+    if (st === "checkmate") return "체크메이트 — 이미 끝난 국면입니다.";
+    if (st === "stalemate") return "스테일메이트 — 무승부로 끝난 국면입니다.";
+    return null;
+  }
+
+  // Called on every render; only does work when the shown position changed.
+  function requestAnalysis() {
+    if (!Engine.on) return;
+    var state = displayState();
+    var fen = toFEN(state);
+    if (fen === Engine.fen) return;
+    Engine.fen = fen; Engine.state = clone(state);
+    Engine.lines = []; Engine.depth = 0;
+    Engine.note = analysisBlocker(state);
+    clearTimeout(Engine.timer);
+    if (Engine.note) stopSearch();
+    else Engine.timer = setTimeout(startSearch, 150);
+  }
+
+  function stopSearch() {
+    if (Engine.searching && Engine.send && !Engine.stopSent) { Engine.stopSent = true; Engine.send("stop"); }
+  }
+
+  function startSearch() {
+    if (!Engine.on || Engine.note || !Engine.fen) return;
+    if (Engine.status !== "ready") { loadEngine(); return; }
+    // A running search is stopped first; its "bestmove" reply starts the next one.
+    if (Engine.searching) { if (Engine.searchFen !== Engine.fen) stopSearch(); return; }
+    Engine.searching = true; Engine.stopSent = false; Engine.searchFen = Engine.fen;
+    Engine.send("position fen " + Engine.fen);
+    Engine.send("go depth " + Engine.depthLimit);
+    queueAnalysisRender();
+  }
+
+  function onEngineLine(line) {
+    if (line.indexOf("bestmove") === 0) {
+      var restart = Engine.stopSent || Engine.searchFen !== Engine.fen;
+      Engine.searching = false; Engine.stopSent = false;
+      if (restart && Engine.on && !Engine.note) startSearch();
+      queueAnalysisRender();
+      return;
+    }
+    if (line.indexOf("info ") !== 0 || line.indexOf(" pv ") === -1) return;
+    if (Engine.stopSent || Engine.searchFen !== Engine.fen || / (lower|upper)bound/.test(line)) return;
+    var sc = line.match(/ score (cp|mate) (-?\d+)/);
+    if (!sc) return;
+    var depth = Number((line.match(/ depth (\d+)/) || [0, 0])[1]);
+    var mpv = Number((line.match(/ multipv (\d+)/) || [0, 1])[1]);
+    // UCI scores are from the side to move; the panel always shows White's point of view.
+    var sign = Engine.state.turn === "w" ? 1 : -1;
+    var conv = pvToMoves(Engine.state, line.slice(line.indexOf(" pv ") + 4).trim().split(/\s+/), PV_PLIES);
+    if (!conv.moves.length) return;
+    Engine.lines[mpv - 1] = {
+      cp: sc[1] === "cp" ? sign * Number(sc[2]) : null,
+      mate: sc[1] === "mate" ? sign * Number(sc[2]) : null,
+      moves: conv.moves, sans: conv.sans
+    };
+    if (mpv === 1) Engine.depth = depth;
+    queueAnalysisRender();
+  }
+
+  function uciToMove(state, uci) {
+    if (!/^[a-h][1-8][a-h][1-8][qrbn]?$/.test(uci)) return null;
+    var from = squareFromAlgebraic(uci.slice(0, 2)), to = squareFromAlgebraic(uci.slice(2, 4));
+    var promo = uci.length > 4 ? uci[4].toUpperCase() : null;
+    return generateLegalMoves(state).filter(function (m) {
+      return m.from === from && m.to === to && (m.promotion || null) === promo;
+    })[0] || null;
+  }
+  function pvToMoves(state, pv, maxPlies) {
+    var moves = [], sans = [], s = state;
+    for (var i = 0; i < pv.length && i < maxPlies; i++) {
+      var mv = uciToMove(s, pv[i]);
+      if (!mv) break;
+      sans.push(moveToSan(s, mv)); moves.push(mv);
+      s = applyMove(s, mv);
+    }
+    return { moves: moves, sans: sans };
+  }
+
+  function formatScore(ln) {
+    if (ln.mate != null) return (ln.mate > 0 ? "+M" : "−M") + Math.abs(ln.mate);
+    var v = Math.round(ln.cp / 10) / 10;
+    return (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(1);
+  }
+  // Same win-chance curve Lichess uses for its eval bar.
+  function whiteShare(ln) {
+    if (ln.mate != null) return ln.mate > 0 ? 100 : 0;
+    return 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * ln.cp)) - 1);
+  }
+  function verdictText(ln) {
+    if (ln.mate != null) return (ln.mate > 0 ? "백" : "흑") + "이 " + Math.abs(ln.mate) + "수 안에 체크메이트할 수 있습니다.";
+    var p = Math.abs(ln.cp) / 100, side = ln.cp > 0 ? "백" : "흑";
+    if (p < 0.35) return "거의 균형입니다.";
+    if (p < 1) return side + "이 약간 유리합니다.";
+    if (p < 2.5) return side + "이 유리합니다.";
+    return side + "이 크게 우세합니다.";
+  }
+
+  function pvMovesHtml(ln, li) {
+    var turn = Engine.state.turn, no = Engine.state.fullmove, out = "";
+    ln.sans.forEach(function (san, i) {
+      if (turn === "w") out += '<span class="pv-num">' + no + ".</span>";
+      else if (i === 0) out += '<span class="pv-num">' + no + "...</span>";
+      out += '<button type="button" class="pv-move" data-line="' + li + '" data-idx="' + i + '">' + escapeHtml(san) + "</button> ";
+      if (turn === "b") no++;
+      turn = turn === "w" ? "b" : "w";
+    });
+    return out;
+  }
+
+  function renderArrow(move) {
+    if (!move) { engineArrowEl.innerHTML = ""; return; }
+    var a = squareToVisual(move.from, App.flipped), b = squareToVisual(move.to, App.flipped);
+    var x1 = a.col + .5, y1 = a.row + .5, x2 = b.col + .5, y2 = b.row + .5;
+    var len = Math.sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1));
+    var ux = (x2 - x1) / len, uy = (y2 - y1) / len;
+    var tipX = x2 - ux * .12, tipY = y2 - uy * .12;
+    var baseX = tipX - ux * .42, baseY = tipY - uy * .42, hw = .21;
+    function f(n) { return n.toFixed(3); }
+    engineArrowEl.innerHTML = '<g>' +
+      '<line x1="' + f(x1 + ux * .15) + '" y1="' + f(y1 + uy * .15) + '" x2="' + f(baseX) + '" y2="' + f(baseY) + '" stroke-width=".15" stroke-linecap="round"/>' +
+      '<polygon points="' + f(tipX) + "," + f(tipY) + " " + f(baseX - uy * hw) + "," + f(baseY + ux * hw) + " " +
+      f(baseX + uy * hw) + "," + f(baseY - ux * hw) + '"/></g>';
+  }
+
+  function queueAnalysisRender() {
+    if (Engine.renderQueued) return;
+    Engine.renderQueued = true;
+    requestAnimationFrame(function () { Engine.renderQueued = false; renderAnalysis(); });
+  }
+
+  function renderAnalysis() {
+    analysisToggle.checked = Engine.on;
+    analysisBodyEl.style.display = Engine.on ? "" : "none";
+    var showLines = Engine.on && !Engine.note && Engine.status !== "failed";
+    var best = showLines ? Engine.lines[0] : null;
+
+    var info = "";
+    if (Engine.on && !Engine.note) {
+      if (Engine.status === "loading" || Engine.status === "idle") info = "엔진 불러오는 중…";
+      else if (Engine.status === "failed") info = "엔진을 불러오지 못했습니다";
+      else if (Engine.depth) info = "깊이 " + Engine.depth + (Engine.searching ? " · 계산 중" : " · 완료");
+      else info = "계산 중…";
+    }
+    analysisInfoEl.textContent = info;
+
+    evalFillEl.style.width = (best ? whiteShare(best) : 50) + "%";
+    evalScoreEl.textContent = best ? formatScore(best) : "";
+    if (Engine.on && Engine.note) evalVerdictEl.textContent = Engine.note;
+    else if (Engine.status === "failed") evalVerdictEl.textContent = "인터넷 연결을 확인한 뒤 분석을 껐다 다시 켜 보세요.";
+    else evalVerdictEl.textContent = best ? verdictText(best) : "";
+
+    var html = "";
+    if (showLines) {
+      Engine.lines.forEach(function (ln, li) {
+        if (!ln) return;
+        html += '<li class="pv-line"><span class="pv-score">' + formatScore(ln) + '</span><span class="pv-moves">' + pvMovesHtml(ln, li) + "</span></li>";
+      });
+    }
+    pvLinesEl.innerHTML = html;
+    renderArrow(best ? best.moves[0] : null);
+  }
+
+  function setAnalysis(on) {
+    Engine.on = on;
+    try { localStorage.setItem(ANALYSIS_KEY, on ? "1" : "0"); } catch (e) {}
+    clearTimeout(Engine.timer);
+    Engine.fen = null; Engine.lines = []; Engine.depth = 0; Engine.note = null;
+    if (!on) stopSearch();
+    if (on && Engine.status === "failed") Engine.status = "idle";
+    render();
+  }
+
+  // Plays an engine line on the board up to the clicked move, as a branch off the book line.
+  function playEngineLine(li, upto) {
+    var ln = Engine.lines[li];
+    if (!ln || !Engine.state) return;
+    var fen = Engine.fen, moves = ln.moves.slice(0, upto + 1);
+    if (App.mode === "setup") setTab("replay");
+    if (toFEN(displayState()) !== fen) App.currentPly = 0;
+    if (toFEN(displayState()) !== fen) { render(); return; }
+    moves.forEach(function (mv) { finalizeMove(displayState(), mv); });
   }
 
   // ---------- move commit ----------
@@ -1932,6 +2271,13 @@
         fenLoadErrorEl.textContent = err.message || "FEN을 해석할 수 없습니다.";
       }
     };
+
+    analysisToggle.onchange = function () { setAnalysis(analysisToggle.checked); };
+    pvLinesEl.addEventListener("click", function (e) {
+      var btn = e.target.closest(".pv-move");
+      if (btn) playEngineLine(Number(btn.dataset.line), Number(btn.dataset.idx));
+    });
+    try { Engine.on = localStorage.getItem(ANALYSIS_KEY) === "1"; } catch (e) {}
 
     render();
   }
