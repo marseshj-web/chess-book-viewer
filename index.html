@@ -313,6 +313,11 @@
   .engine-arrow line { stroke: var(--accent); }
   .engine-arrow polygon { fill: var(--accent); stroke: none; }
   .analysis-body { display: flex; flex-direction: column; gap: 8px; }
+  .game-section { display: flex; flex-direction: column; gap: 14px; }
+  .game-start { flex-wrap: wrap; }
+  .game-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+  .game-info { font-size: .9rem; font-weight: 600; }
+  .game-result { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 8px; background: var(--accent-soft); }
   .analysis { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
   .analysis-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
   .analysis-toggle { display: flex; align-items: center; gap: 6px; font-size: .9rem; font-weight: 600; cursor: pointer; }
@@ -393,6 +398,7 @@
         <button class="tab-btn active" id="tabReplayBtn" role="tab">재생</button>
         <button class="tab-btn" id="tabSetupBtn" role="tab">세팅</button>
         <button class="tab-btn" id="tabPhotoBtn" role="tab">사진 인식</button>
+        <button class="tab-btn" id="tabGameBtn" role="tab">대국</button>
       </div>
 
       <div id="panelReplay" class="panel-card">
@@ -504,6 +510,53 @@
           </div>
         </div>
         <div id="photoResults" class="field-group"></div>
+      </div>
+
+      <div id="panelGame" class="panel-card" style="display:none;">
+        <div id="gameResult" class="game-result" style="display:none;">
+          <strong id="gameResultText"></strong>
+          <div class="game-buttons">
+            <button class="btn small" id="gameAnalyzeBtn">엔진 분석 켜고 복기하기</button>
+          </div>
+          <span class="hint">둔 수는 수순 목록에 남아 있어 앞뒤로 넘겨 볼 수 있습니다.</span>
+        </div>
+
+        <div id="gameSetup" class="game-section">
+          <div class="setup-row">
+            <div class="field-group">
+              <span class="field-label">내 색</span>
+              <div class="radio-group">
+                <label><input type="radio" name="gameColor" value="w" checked> 백</label>
+                <label><input type="radio" name="gameColor" value="b"> 흑</label>
+                <label><input type="radio" name="gameColor" value="random"> 무작위</label>
+              </div>
+            </div>
+            <div class="field-group">
+              <label class="field-label" for="gameLevel">컴퓨터 실력 (Elo)</label>
+              <select id="gameLevel" class="start-select"></select>
+            </div>
+          </div>
+          <div class="field-group">
+            <span class="field-label">시작 국면</span>
+            <div class="radio-group game-start">
+              <label><input type="radio" name="gameStart" value="initial" checked> 처음부터</label>
+              <label><input type="radio" name="gameStart" value="current"> 지금 보드의 국면에서 이어 두기</label>
+            </div>
+          </div>
+          <div><button class="btn primary" id="gameStartBtn">대국 시작</button></div>
+          <div id="gameError" class="inline-error"></div>
+          <div class="hint">'이어 두기'를 고르면 책 기보나 세팅한 국면에서 바로 대국합니다. 끝난 뒤 '책 수순으로 복귀'로 책 기보로 돌아갈 수 있습니다. '처음부터'를 고르면 재생 중인 기보는 보드에서 지워집니다 (입력칸의 글은 남음). 실력은 대략적인 추정치입니다.</div>
+        </div>
+
+        <div id="gamePlaying" class="game-section" style="display:none;">
+          <div id="gameInfo" class="game-info"></div>
+          <div id="gameStatus" class="status-banner"></div>
+          <div class="game-buttons">
+            <button class="btn" id="undoBtn">무르기</button>
+            <button class="btn" id="resignBtn">기권</button>
+          </div>
+          <div class="hint">대국 중에는 엔진 분석과 수순 넘기기가 잠깁니다. 무르기는 내 마지막 수 직전으로 되돌립니다.</div>
+        </div>
       </div>
     </section>
   </div>
@@ -1200,6 +1253,7 @@
     App.parseSkipped = [];
     App.selectedSquare = null;
     App.legalTargets = [];
+    Game.active = false; Game.moving = false; Game.result = null;
   }
 
   function visualToSquare(row, col, flipped) {
@@ -1267,11 +1321,25 @@
   var evalScoreEl = document.getElementById("evalScore");
   var evalVerdictEl = document.getElementById("evalVerdict");
   var pvLinesEl = document.getElementById("pvLines");
+  var tabGameBtn = document.getElementById("tabGameBtn");
+  var panelGame = document.getElementById("panelGame");
+  var gameLevelSel = document.getElementById("gameLevel");
+  var gameStartBtn = document.getElementById("gameStartBtn");
+  var gameErrorEl = document.getElementById("gameError");
+  var gameSetupEl = document.getElementById("gameSetup");
+  var gamePlayingEl = document.getElementById("gamePlaying");
+  var gameInfoEl = document.getElementById("gameInfo");
+  var gameStatusEl = document.getElementById("gameStatus");
+  var undoBtn = document.getElementById("undoBtn");
+  var resignBtn = document.getElementById("resignBtn");
+  var gameResultEl = document.getElementById("gameResult");
+  var gameResultTextEl = document.getElementById("gameResultText");
+  var gameAnalyzeBtn = document.getElementById("gameAnalyzeBtn");
 
   // ---------- tabs ----------
   function setTab(name) {
     App.mode = name === "setup" ? "setup" : "replay";
-    [["replay", tabReplayBtn, panelReplay], ["setup", tabSetupBtn, panelSetup], ["photo", tabPhotoBtn, panelPhoto]].forEach(function (t) {
+    [["replay", tabReplayBtn, panelReplay], ["setup", tabSetupBtn, panelSetup], ["photo", tabPhotoBtn, panelPhoto], ["game", tabGameBtn, panelGame]].forEach(function (t) {
       t[1].classList.toggle("active", t[0] === name);
       t[2].style.display = t[0] === name ? "flex" : "none";
     });
@@ -1574,10 +1642,11 @@
 
   function renderToolbar() {
     var last = App.viewPositions.length - 1;
-    firstBtn.disabled = App.currentPly <= 0;
-    prevBtn.disabled = App.currentPly <= 0;
-    nextBtn.disabled = App.currentPly >= last;
-    lastBtn.disabled = App.currentPly >= last;
+    // Stepping through moves is locked during a game; use 무르기 instead.
+    firstBtn.disabled = Game.active || App.currentPly <= 0;
+    prevBtn.disabled = Game.active || App.currentPly <= 0;
+    nextBtn.disabled = Game.active || App.currentPly >= last;
+    lastBtn.disabled = Game.active || App.currentPly >= last;
     plyIndicatorEl.textContent = App.currentPly + " / " + last;
 
     var state = displayState();
@@ -1657,13 +1726,16 @@
   }
 
   function render() {
+    updateGame();
     renderBoard();
     renderToolbar();
     renderParseError();
     renderMoveList();
     renderSetupPanel();
     requestAnalysis();
+    schedulePump();
     renderAnalysis();
+    renderGamePanel();
   }
 
   // ---------- clipboard ----------
@@ -1718,8 +1790,24 @@
     on: false, status: "idle", // idle | loading | ready | failed
     send: null, depthLimit: 18,
     fen: null, state: null, note: null, lines: [], depth: 0,
-    searching: false, searchFen: null, stopSent: false,
+    searching: false, job: null, finished: null, stopSent: false,
     timer: null, renderQueued: false
+  };
+
+  // ---------- game against the computer ----------
+  // Stockfish 10 has no Elo setting, so strength comes from its Skill Level plus a depth cap.
+  // The Elo labels are rough estimates, not calibrated ratings.
+  var GAME_KEY = "chess-book-viewer:game";
+  var GAME_LEVELS = [
+    { elo: 1000, skill: 3, depth: 1 }, { elo: 1100, skill: 5, depth: 2 }, { elo: 1200, skill: 6, depth: 2 },
+    { elo: 1300, skill: 7, depth: 3 }, { elo: 1400, skill: 8, depth: 3 }, { elo: 1500, skill: 9, depth: 4 },
+    { elo: 1600, skill: 10, depth: 5 }, { elo: 1700, skill: 11, depth: 5 }, { elo: 1800, skill: 12, depth: 6 },
+    { elo: 1900, skill: 13, depth: 7 }, { elo: 2000, skill: 14, depth: 8 }
+  ];
+  var Game = {
+    active: false, result: null,
+    myColor: "w", engineColor: "b", level: 4, startPly: 0,
+    moving: false, thinkingSince: 0
   };
 
   function absUrl(u) { try { return new URL(u, location.href).href; } catch (e) { return u; } }
@@ -1795,8 +1883,7 @@
         Engine.send = handle.send;
         Engine.depthLimit = handle.mainThread ? 12 : 18;
         Engine.status = "ready";
-        handle.send("setoption name MultiPV value " + ENGINE_LINES);
-        setTimeout(startSearch, 0);
+        setTimeout(pump, 0);
       }, fail);
       handle.send("uci");
     }
@@ -1814,43 +1901,83 @@
 
   // Called on every render; only does work when the shown position changed.
   function requestAnalysis() {
-    if (!Engine.on) return;
+    if (!Engine.on || Game.active) return;
     var state = displayState();
     var fen = toFEN(state);
     if (fen === Engine.fen) return;
     Engine.fen = fen; Engine.state = clone(state);
     Engine.lines = []; Engine.depth = 0;
     Engine.note = analysisBlocker(state);
-    clearTimeout(Engine.timer);
-    if (Engine.note) stopSearch();
-    else Engine.timer = setTimeout(startSearch, 150);
+  }
+
+  // The engine runs one job at a time: the computer's move in a game, or analysis of the shown position.
+  function wantedJob() {
+    if (Game.active) {
+      var st = displayState();
+      if (Game.moving || App.mode !== "replay" || st.turn !== Game.engineColor) return null;
+      return { kind: "play", fen: toFEN(st) };
+    }
+    if (!Engine.on || Engine.note || !Engine.fen) return null;
+    var job = { kind: "analysis", fen: Engine.fen };
+    return sameJob(job, Engine.finished) ? null : job;
+  }
+  function sameJob(a, b) { return !!a && !!b && a.kind === b.kind && a.fen === b.fen; }
+
+  function schedulePump() { clearTimeout(Engine.timer); Engine.timer = setTimeout(pump, 150); }
+
+  function pump() {
+    var job = wantedJob();
+    // A running search is stopped first; its "bestmove" reply calls pump again.
+    if (Engine.searching) { if (!sameJob(Engine.job, job)) stopSearch(); return; }
+    if (!job) return;
+    if (Engine.status !== "ready") { loadEngine(); return; }
+    Engine.searching = true; Engine.stopSent = false; Engine.job = job; Engine.finished = null;
+    if (job.kind === "play") {
+      var lv = GAME_LEVELS[Game.level];
+      Engine.send("setoption name MultiPV value 1");
+      Engine.send("setoption name Skill Level value " + lv.skill);
+      Engine.send("position fen " + job.fen);
+      Engine.send("go depth " + lv.depth + " movetime 3000");
+      Game.thinkingSince = Date.now();
+    } else {
+      Engine.send("setoption name MultiPV value " + ENGINE_LINES);
+      Engine.send("setoption name Skill Level value 20");
+      Engine.send("position fen " + job.fen);
+      Engine.send("go depth " + Engine.depthLimit);
+    }
+    queueAnalysisRender();
   }
 
   function stopSearch() {
     if (Engine.searching && Engine.send && !Engine.stopSent) { Engine.stopSent = true; Engine.send("stop"); }
   }
 
-  function startSearch() {
-    if (!Engine.on || Engine.note || !Engine.fen) return;
-    if (Engine.status !== "ready") { loadEngine(); return; }
-    // A running search is stopped first; its "bestmove" reply starts the next one.
-    if (Engine.searching) { if (Engine.searchFen !== Engine.fen) stopSearch(); return; }
-    Engine.searching = true; Engine.stopSent = false; Engine.searchFen = Engine.fen;
-    Engine.send("position fen " + Engine.fen);
-    Engine.send("go depth " + Engine.depthLimit);
-    queueAnalysisRender();
+  // Shows the computer's move after a short pause so instant replies don't feel abrupt.
+  function playEngineMove(job, uci) {
+    Game.moving = true;
+    setTimeout(function () {
+      Game.moving = false;
+      var st = displayState();
+      var mv = Game.active && toFEN(st) === job.fen ? uciToMove(st, uci || "") : null;
+      if (mv) finalizeMove(st, mv); else render();
+    }, Math.max(0, 600 - (Date.now() - Game.thinkingSince)));
   }
 
   function onEngineLine(line) {
     if (line.indexOf("bestmove") === 0) {
-      var restart = Engine.stopSent || Engine.searchFen !== Engine.fen;
-      Engine.searching = false; Engine.stopSent = false;
-      if (restart && Engine.on && !Engine.note) startSearch();
+      var done = Engine.job, stopped = Engine.stopSent;
+      Engine.searching = false; Engine.stopSent = false; Engine.job = null;
+      if (done && !stopped) {
+        if (done.kind === "analysis") Engine.finished = done;
+        else playEngineMove(done, line.split(/\s+/)[1]);
+      }
+      pump();
       queueAnalysisRender();
       return;
     }
     if (line.indexOf("info ") !== 0 || line.indexOf(" pv ") === -1) return;
-    if (Engine.stopSent || Engine.searchFen !== Engine.fen || / (lower|upper)bound/.test(line)) return;
+    if (!Engine.job || Engine.job.kind !== "analysis" || Engine.job.fen !== Engine.fen) return;
+    if (Engine.stopSent || / (lower|upper)bound/.test(line)) return;
     var sc = line.match(/ score (cp|mate) (-?\d+)/);
     if (!sc) return;
     var depth = Number((line.match(/ depth (\d+)/) || [0, 0])[1]);
@@ -1936,11 +2063,19 @@
   function queueAnalysisRender() {
     if (Engine.renderQueued) return;
     Engine.renderQueued = true;
-    requestAnimationFrame(function () { Engine.renderQueued = false; renderAnalysis(); });
+    requestAnimationFrame(function () { Engine.renderQueued = false; renderAnalysis(); renderGamePanel(); });
   }
 
   function renderAnalysis() {
     analysisToggle.checked = Engine.on;
+    analysisToggle.disabled = Game.active;
+    if (Game.active) {
+      // Hidden during a game so the engine's answer isn't given away.
+      analysisBodyEl.style.display = "none";
+      analysisInfoEl.textContent = Engine.on ? "대국 중에는 숨깁니다" : "";
+      renderArrow(null);
+      return;
+    }
     analysisBodyEl.style.display = Engine.on ? "" : "none";
     var showLines = Engine.on && !Engine.note && Engine.status !== "failed";
     var best = showLines ? Engine.lines[0] : null;
@@ -1974,11 +2109,119 @@
   function setAnalysis(on) {
     Engine.on = on;
     try { localStorage.setItem(ANALYSIS_KEY, on ? "1" : "0"); } catch (e) {}
-    clearTimeout(Engine.timer);
-    Engine.fen = null; Engine.lines = []; Engine.depth = 0; Engine.note = null;
-    if (!on) stopSearch();
+    Engine.fen = null; Engine.lines = []; Engine.depth = 0; Engine.note = null; Engine.finished = null;
     if (on && Engine.status === "failed") Engine.status = "idle";
     render();
+  }
+
+  // ---------- game flow ----------
+  function selectedRadio(name) {
+    var el = document.querySelector('input[name="' + name + '"]:checked');
+    return el ? el.value : null;
+  }
+
+  function startGame() {
+    var color = selectedRadio("gameColor");
+    if (color === "random") color = Math.random() < .5 ? "w" : "b";
+    var level = Number(gameLevelSel.value);
+    gameErrorEl.textContent = "";
+    if (selectedRadio("gameStart") === "initial") {
+      App.rootState = parseFEN(STANDARD_FEN);
+      resetDerivedFromRoot();
+    } else {
+      var st = displayState();
+      var w = diagramWarnings(st), status = positionStatus(st);
+      if (w.length) { gameErrorEl.textContent = "이 국면에서는 대국을 시작할 수 없습니다: " + w.join(", ") + "."; return; }
+      if (status === "checkmate" || status === "stalemate") { gameErrorEl.textContent = "이미 끝난 국면입니다."; return; }
+    }
+    try { localStorage.setItem(GAME_KEY, JSON.stringify({ color: selectedRadio("gameColor"), level: level })); } catch (e) {}
+    Game.active = true; Game.result = null; Game.moving = false;
+    Game.myColor = color; Game.engineColor = color === "w" ? "b" : "w";
+    Game.level = level; Game.startPly = App.currentPly;
+    App.flipped = color === "b";
+    App.selectedSquare = null; App.legalTargets = [];
+    render();
+  }
+
+  function endGame(result) {
+    Game.active = false; Game.moving = false; Game.result = result;
+  }
+
+  function insufficientMaterial(board) {
+    var minors = 0;
+    for (var i = 0; i < 64; i++) {
+      var t = pieceTypeOf(board[i]);
+      if (!t || t === "K") continue;
+      if (t !== "B" && t !== "N") return false;
+      minors++;
+    }
+    return minors <= 1;
+  }
+  function repetitionCount() {
+    function key(s) { return toFEN(s).split(" ").slice(0, 4).join(" "); }
+    var cur = key(App.viewPositions[App.currentPly]), n = 0;
+    for (var i = 0; i <= App.currentPly; i++) if (key(App.viewPositions[i]) === cur) n++;
+    return n;
+  }
+
+  // Called on every render: ends the game when the shown position is over.
+  function updateGame() {
+    if (!Game.active) return;
+    var st = displayState();
+    var status = positionStatus(st);
+    if (status === "checkmate") endGame(st.turn === Game.myColor ? "체크메이트 — 컴퓨터가 이겼습니다." : "체크메이트 — 이겼습니다!");
+    else if (status === "stalemate") endGame("스테일메이트 — 무승부입니다.");
+    else if (st.halfmove >= 100) endGame("50수 동안 잡거나 폰을 움직이지 않아 무승부입니다.");
+    else if (insufficientMaterial(st.board)) endGame("메이트할 기물이 부족해 무승부입니다.");
+    else if (repetitionCount() >= 3) endGame("같은 국면이 세 번 나와 무승부입니다.");
+  }
+
+  // The latest earlier position where it was my turn, or -1.
+  function undoTarget() {
+    for (var t = App.currentPly - 1; t >= Game.startPly; t--) {
+      if (App.viewPositions[t].turn === Game.myColor) return t;
+    }
+    return -1;
+  }
+  function undoMove() {
+    var t = undoTarget();
+    if (!Game.active || t < 0) return;
+    if (App.divergeAt !== null && t <= App.divergeAt) {
+      App.viewPositions = App.bookPositions.slice();
+      App.viewMoves = App.bookMoves.slice();
+      App.divergeAt = null;
+    } else if (App.divergeAt !== null) {
+      App.viewPositions = App.viewPositions.slice(0, t + 1);
+      App.viewMoves = App.viewMoves.slice(0, t);
+    }
+    // Moves that matched the book stay on the book line; only the ply pointer moves back.
+    App.currentPly = t;
+    App.selectedSquare = null; App.legalTargets = [];
+    render();
+  }
+
+  function renderGamePanel() {
+    gameResultEl.style.display = Game.result ? "" : "none";
+    gameResultTextEl.textContent = Game.result || "";
+    gameAnalyzeBtn.style.display = Engine.on ? "none" : "";
+    gameSetupEl.style.display = Game.active ? "none" : "";
+    gamePlayingEl.style.display = Game.active ? "" : "none";
+    if (!Game.active) return;
+    var st = displayState();
+    gameInfoEl.textContent = "나: " + (Game.myColor === "w" ? "백" : "흑") + " · 컴퓨터: 약 " + GAME_LEVELS[Game.level].elo;
+    var text, cls = "status-banner";
+    if (App.mode !== "replay") text = "세팅 탭에서는 대국이 멈춥니다. 대국 탭으로 돌아오세요.";
+    else if (st.turn === Game.engineColor) {
+      if (Engine.status === "failed") { text = "엔진을 불러오지 못했습니다. 인터넷 연결을 확인하세요."; cls += " danger"; }
+      else if (Engine.status !== "ready") text = "엔진 불러오는 중…";
+      else text = "컴퓨터가 생각 중…";
+    } else {
+      text = "내 차례입니다";
+      if (positionStatus(st) === "check") { text += " · 체크!"; cls += " warn"; }
+    }
+    gameStatusEl.textContent = text;
+    gameStatusEl.className = cls;
+    undoBtn.disabled = undoTarget() < 0;
   }
 
   // Plays an engine line on the board up to the clicked move, as a branch off the book line.
@@ -2038,9 +2281,14 @@
   }
 
   // ---------- click / setup interactions ----------
+  function isComputersTurn() {
+    return Game.active && App.mode === "replay" && (Game.moving || displayState().turn !== Game.myColor);
+  }
+
   function onSquareClick(sq) {
     if (App.pendingPromotion) return;
     if (App.mode === "setup") { handleSetupClick(sq); return; }
+    if (isComputersTurn()) return;
     var state = displayState();
     var piece = state.board[sq];
     if (App.selectedSquare != null && App.legalTargets.indexOf(sq) !== -1) {
@@ -2126,7 +2374,7 @@
     var sqEl = e.target.closest(".sq");
     if (!sqEl) return;
     var sq = Number(sqEl.dataset.sq);
-    if (App.pendingPromotion) return;
+    if (App.pendingPromotion || isComputersTurn()) return;
     var state = displayState();
     var piece = state.board[sq];
     if (!piece) { onSquareClick(sq); return; }
@@ -2175,9 +2423,9 @@
     copyFenBtn.onclick = function () { copyToClipboard(toFEN(displayState()), copyFenBtn); };
     copyPgnBtn.onclick = function () { copyToClipboard(buildMovetext(), copyPgnBtn); };
     backToBookBtn.onclick = function () {
-      if (App.divergeAt === null) return;
-      App.viewPositions = App.bookPositions.slice(0, App.divergeAt + 1);
-      App.viewMoves = App.bookMoves.slice(0, App.divergeAt);
+      if (App.divergeAt === null || Game.active) return;
+      App.viewPositions = App.bookPositions.slice();
+      App.viewMoves = App.bookMoves.slice();
       App.currentPly = App.divergeAt;
       App.divergeAt = null;
       App.selectedSquare = null;
@@ -2197,7 +2445,7 @@
 
     moveListEl.addEventListener("click", function (e) {
       var btn = e.target.closest(".move-chip");
-      if (!btn) return;
+      if (!btn || Game.active) return;
       App.currentPly = Number(btn.dataset.ply);
       App.selectedSquare = null;
       App.legalTargets = [];
@@ -2207,6 +2455,22 @@
     tabReplayBtn.onclick = function () { setTab("replay"); };
     tabSetupBtn.onclick = function () { setTab("setup"); };
     tabPhotoBtn.onclick = function () { setTab("photo"); };
+    tabGameBtn.onclick = function () { setTab("game"); };
+
+    gameLevelSel.innerHTML = GAME_LEVELS.map(function (lv, i) {
+      return '<option value="' + i + '">약 ' + lv.elo + (i === 0 ? " (입문)" : i === GAME_LEVELS.length - 1 ? " (강함)" : "") + "</option>";
+    }).join("");
+    try {
+      var prefs = JSON.parse(localStorage.getItem(GAME_KEY) || "null");
+      if (prefs && GAME_LEVELS[prefs.level]) Game.level = prefs.level;
+      var colorRadio = prefs && document.querySelector('input[name="gameColor"][value="' + prefs.color + '"]');
+      if (colorRadio) colorRadio.checked = true;
+    } catch (e) {}
+    gameLevelSel.value = String(Game.level);
+    gameStartBtn.onclick = startGame;
+    undoBtn.onclick = undoMove;
+    resignBtn.onclick = function () { endGame("기권했습니다. 컴퓨터의 승리입니다."); render(); };
+    gameAnalyzeBtn.onclick = function () { setAnalysis(true); };
     initPhoto();
 
     playBtn.onclick = function () {
@@ -2222,6 +2486,7 @@
       App.parseError = result.error;
       App.parseSkipped = result.skipped;
       App.selectedSquare = null; App.legalTargets = [];
+      endGame(null);
       render();
     };
     movetextInput.addEventListener("keydown", function (e) {
