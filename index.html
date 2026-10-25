@@ -2157,7 +2157,7 @@
       return r.text();
     }).then(function (text) {
       var map = new Map();
-      text.split("\n").forEach(function (line) {
+      text.split(/\r?\n/).forEach(function (line) {
         var p = line.split("\t");
         if (p.length === 3) map.set(p[0], { eco: p[1], name: p[2] });
       });
